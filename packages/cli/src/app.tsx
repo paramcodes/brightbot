@@ -1,38 +1,75 @@
 import { cwd } from "node:process"
-import { useRenderer } from "@opentui/react"
+import type { CliRenderer } from "@opentui/core"
+import { useKeyboard, useRenderer } from "@opentui/react"
 import { useState } from "react"
 import { InputBar } from "./components/input/InputBar.js"
 import { Banner } from "./components/layout/Banner.js"
 import { Header } from "./components/layout/Header.js"
+import { ToastProvider } from "./components/toast/ToastProvider.js"
+import { useToast } from "./components/toast/useToast.js"
+import { isTextEntryKey, keyToken } from "./core/keys.js"
 import { exitCleanly } from "./core/renderer.js"
-import { ResponderProvider, useRootKeys } from "./core/responder/useResponder.js"
+import { ResponderProvider, useResponderActions } from "./core/responder/ResponderContext.js"
 import { defaultTheme } from "./styles/theme.js"
 
-/** Header, banner, composer, and the responder chain that owns every control key. */
-export function App() {
+const DEFAULT_MODEL = "claude-3-5-sonnet"
+
+export interface AppProps {
+  onExit?: (renderer: CliRenderer) => void
+  /** Overlay layers (modals, dialogs) render inside the providers so they share the chain. */
+  children?: React.ReactNode
+}
+
+export function App({ onExit, children }: AppProps = {}) {
   return (
-    <ResponderProvider>
-      <AppShell />
-    </ResponderProvider>
+    <ToastProvider>
+      <ResponderProvider>
+        <AppShell onExit={onExit} />
+        {children}
+      </ResponderProvider>
+    </ToastProvider>
   )
 }
 
-function AppShell() {
+/** The shell: header, brand, composer, and the one root keyboard listener for the whole app. */
+function AppShell({ onExit }: AppProps) {
   const renderer = useRenderer()
   const theme = defaultTheme
+  const { dispatch } = useResponderActions()
+  const { push } = useToast()
   const [draft, setDraft] = useState("")
+  const [status, setStatus] = useState("idle")
+  const [model] = useState(DEFAULT_MODEL)
 
-  useRootKeys((token) => {
-    if (token === "ctrl+c") exitCleanly(renderer)
+  useKeyboard((event) => {
+    const token = keyToken(event)
+    // Printable keys belong to the focused input; the chain only ever sees control keys.
+    if (isTextEntryKey(token)) return
+    if (dispatch({ token, event })) return
+    if (token === "ctrl+c") (onExit ?? exitCleanly)(renderer)
+    if (token === "escape") push({ kind: "info", message: "No generation to interrupt" })
   })
 
   return (
     <box flexDirection="column" width="100%" height="100%">
-      <Header theme={theme} cwd={cwd()} mode="plan" model="claude-3-5-sonnet" status="idle" width={renderer.width} />
+      <Header theme={theme} cwd={cwd()} mode="plan" model={model} status={status} width={renderer.width} />
       <box flexGrow={1} alignItems="center" justifyContent="center">
         <Banner theme={theme} />
       </box>
-      <InputBar theme={theme} value={draft} focused onChange={setDraft} onSubmit={() => setDraft("")} />
+      <InputBar
+        theme={theme}
+        value={draft}
+        focused
+        onChange={setDraft}
+        onSubmit={(value) => {
+          setStatus("sent")
+          setDraft("")
+          push({ kind: "info", message: `Queued: ${value}`, durationMs: 1500 })
+        }}
+      />
+      <box height={1} paddingX={1}>
+        <text fg={theme.dim}>tab switch mode · / commands · @ mention a file · esc interrupt · ctrl+c quit</text>
+      </box>
     </box>
   )
 }
