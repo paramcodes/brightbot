@@ -13,12 +13,16 @@ import json
 import os
 import pty
 import select
+import signal
 import struct
 import termios
 import time
 
 
 def run(cmd, script, cols=110, rows=32, cast=None, raw=None, idle_after=2.0, timeout=90.0):
+    # A ctrl+c byte written into the pty raises SIGINT in the foreground process group. The driver must
+    # not join that group, or proving an interrupt kills the driver instead of the child.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     pid, fd = pty.fork()
     if pid == 0:
         os.environ["TERM"] = "xterm-256color"
@@ -65,10 +69,15 @@ def run(cmd, script, cols=110, rows=32, cast=None, raw=None, idle_after=2.0, tim
         os.close(fd)
     except OSError:
         pass
-    try:
-        os.waitpid(pid, os.WNOHANG)
-    except OSError:
-        pass
+    # Reap the child and report how it ended: an exit code, or a signal the kernel delivered.
+    status = None
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        waited, raw_status = os.waitpid(pid, os.WNOHANG)
+        if waited:
+            status = raw_status
+            break
+        time.sleep(0.05)
 
     if raw:
         with open(raw, "w") as handle:
@@ -90,7 +99,14 @@ def run(cmd, script, cols=110, rows=32, cast=None, raw=None, idle_after=2.0, tim
             )
             for at, chunk in chunks:
                 handle.write(json.dumps([round(at, 3), "o", chunk]) + "\n")
-    return chunks
+    if status is None:
+        exit_report = "never-reaped"
+    elif os.WIFSIGNALED(status):
+        exit_report = f"signaled signo={os.WTERMSIG(status)}"
+    else:
+        exit_report = f"code={os.WEXITSTATUS(status)}"
+
+    return chunks, exit_report
 
 
 def parse_script(spec):
@@ -122,7 +138,7 @@ def main():
     parser.add_argument("--expect", help="fail unless the raw output contains this text")
     args = parser.parse_args()
 
-    chunks = run(
+    chunks, exit_report = run(
         args.cmd,
         parse_script(args.script),
         cols=args.cols,
@@ -132,7 +148,7 @@ def main():
         idle_after=args.idle_after,
     )
     text = "".join(chunk for _, chunk in chunks)
-    print(f"captured {len(chunks)} chunks, {len(text)} bytes")
+    print(f"captured {len(chunks)} chunks, {len(text)} bytes, app exit {exit_report}")
     if args.expect:
         if args.expect in text:
             print(f"expect-ok: found {args.expect!r}")
