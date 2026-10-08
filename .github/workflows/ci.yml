@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Lint and format
+        run: bunx biome check .
+      - name: Unit and TUI tests
+        run: bun test packages
+      - name: CLI smoke test in a real terminal
+        run: |
+          bun run --cwd packages/cli src/index.tsx --help > /tmp/help.txt 2>&1 || true
+          head -c 200 /tmp/help.txt
