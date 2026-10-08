@@ -1,18 +1,16 @@
 import { cwd } from "node:process"
 import type { CliRenderer } from "@opentui/core"
-import { useKeyboard, useRenderer } from "@opentui/react"
+import { useRenderer } from "@opentui/react"
 import { useState } from "react"
 import { InputBar } from "./components/input/InputBar.js"
 import { Banner } from "./components/layout/Banner.js"
 import { Header } from "./components/layout/Header.js"
 import { ToastProvider } from "./components/toast/ToastProvider.js"
 import { useToast } from "./components/toast/useToast.js"
-import { isTextEntryKey, keyToken } from "./core/keys.js"
+import { ThemeProvider, useTheme } from "./context/ThemeContext.js"
 import { exitCleanly } from "./core/renderer.js"
-import { ResponderProvider, useResponderActions } from "./core/responder/ResponderContext.js"
-import { defaultTheme } from "./styles/theme.js"
-
-const DEFAULT_MODEL = "claude-3-5-sonnet"
+import { ResponderProvider, useRootKeys } from "./core/responder/useResponder.js"
+import { DEFAULT_PREFERENCES } from "./lib/config.js"
 
 export interface AppProps {
   onExit?: (renderer: CliRenderer) => void
@@ -22,11 +20,21 @@ export interface AppProps {
 
 export function App({ onExit, children }: AppProps = {}) {
   return (
-    <ToastProvider>
+    <ThemeProvider>
       <ResponderProvider>
-        <AppShell onExit={onExit} />
+        <ThemedShell onExit={onExit} />
         {children}
       </ResponderProvider>
+    </ThemeProvider>
+  )
+}
+
+/** The toasts paint from the active theme, so they read it below the provider rather than importing it. */
+function ThemedShell({ onExit }: AppProps) {
+  const { theme } = useTheme()
+  return (
+    <ToastProvider theme={theme}>
+      <AppShell onExit={onExit} />
     </ToastProvider>
   )
 }
@@ -34,25 +42,19 @@ export function App({ onExit, children }: AppProps = {}) {
 /** The shell: header, brand, composer, and the one root keyboard listener for the whole app. */
 function AppShell({ onExit }: AppProps) {
   const renderer = useRenderer()
-  const theme = defaultTheme
-  const { dispatch } = useResponderActions()
+  const { theme } = useTheme()
   const { push } = useToast()
   const [draft, setDraft] = useState("")
   const [status, setStatus] = useState("idle")
-  const [model] = useState(DEFAULT_MODEL)
 
-  useKeyboard((event) => {
-    const token = keyToken(event)
-    // Printable keys belong to the focused input; the chain only ever sees control keys.
-    if (isTextEntryKey(token)) return
-    if (dispatch({ token, event })) return
+  useRootKeys((token) => {
     if (token === "ctrl+c") (onExit ?? exitCleanly)(renderer)
     if (token === "escape") push({ kind: "info", message: "No generation to interrupt" })
   })
 
   return (
     <box flexDirection="column" width="100%" height="100%">
-      <Header theme={theme} cwd={cwd()} mode="plan" model={model} status={status} width={renderer.width} />
+      <Header theme={theme} cwd={cwd()} mode="plan" model={DEFAULT_PREFERENCES.model} status={status} width={renderer.width} />
       <box flexGrow={1} alignItems="center" justifyContent="center">
         <Banner theme={theme} />
       </box>
