@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Drive a CLI in a real pseudo-terminal, send keystrokes on a timeline, and capture the raw output.
 
-Used by the Night Code verification skill and the demo recorder: the app under test is the real
-artifact, running the real renderer against a real TTY, not a mock.
+Used by the Night Code verification skill (.opencode/skills/verify-nightcode) and the Phase 9 demo
+recorder: the app under test is the real artifact, running the real renderer against a real TTY.
 
 Keystroke escapes in the script: \\r return, \\n newline, \\t tab, \\e escape, \\b backspace,
 \\x1b[A up, \\x1b[B down, \\x1b[C right, \\x1b[D left.

@@ -23,5 +23,5 @@ execution authority stays on your machine.
 ## Status
 
 The build follows `night_code_implementation_plan.md` in nine phases, one pull request per phase.
-`docs/feature-map.md` holds the generated map. `docs/verification.md` holds the verification skill.
+`docs/feature-map.md` holds the generated map. `.opencode/skills/verify-nightcode/` holds the verification skill: launch, drive, evidence, and a feature map.
 

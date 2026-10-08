@@ -19,7 +19,8 @@ packages/cli       OpenTUI React terminal client
 packages/shared    Contracts shared by the client and the server: branding, paths, schemas, prompts, tools
 packages/server    Hono backend (SSE chat relay, auth, persistence, billing meters)
 tools/             Repo tooling: plan data, issue creation, feature map, PTY driver
-docs/              Feature map, phase status, verification skill
+docs/              Generated feature map and phase status
+.opencode/skills   Verification skill: drives the real CLI and its feature map
 ```
 
 ## Conventions that are not optional
@@ -47,4 +48,4 @@ keyboard protocol on. Two rules make them deterministic:
    render.
 
 `tools/cli-pty.py` drives the real binary in a real pseudo-terminal when a test must prove the
-artifact a user runs, not a rendered tree.
+artifact a user runs, not a rendered tree. `.opencode/skills/verify-nightcode/` is the full recipe.
