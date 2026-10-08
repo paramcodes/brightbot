@@ -13,6 +13,7 @@ this index before driving the app, then use the matching feature file as the rec
 - `NIGHTCODE_HOME` points at a directory under the run folder once the app writes preferences, so a run
   never touches the real home directory.
 - Kills are by driver only. Never kill a process by name.
+- Post-merge re-runs go through the same recipe; a green suite on `master` is what the maintenance pass records.
 
 ## Driving conventions
 
