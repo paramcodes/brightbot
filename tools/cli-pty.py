@@ -19,6 +19,12 @@ import termios
 import time
 
 
+def ensure_parent(path):
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent)
+
+
 def run(cmd, script, cols=110, rows=32, cast=None, raw=None, idle_after=2.0, timeout=90.0):
     # A ctrl+c byte written into the pty raises SIGINT in the foreground process group. The driver must
     # not join that group, or proving an interrupt kills the driver instead of the child.
@@ -80,10 +86,12 @@ def run(cmd, script, cols=110, rows=32, cast=None, raw=None, idle_after=2.0, tim
         time.sleep(0.05)
 
     if raw:
+        ensure_parent(raw)
         with open(raw, "w") as handle:
             for _, chunk in chunks:
                 handle.write(chunk)
     if cast:
+        ensure_parent(cast)
         with open(cast, "w") as handle:
             handle.write(
                 json.dumps(
