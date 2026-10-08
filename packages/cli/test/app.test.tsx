@@ -25,13 +25,45 @@ describe("app shell", () => {
     expect(setup.captureCharFrame()).toContain("read package.json")
   })
 
-  test("submits on return, clears the composer, and queues a toast", async () => {
+  test("submitting a prompt on Home lands in Session with the prompt visible", async () => {
     const setup = await renderTui(<App />)
     await type(setup, "hello there")
     await press(setup, ["RETURN"])
     const frame = setup.captureCharFrame()
+    expect(frame).toContain("> hello there")
+    expect(frame).not.toContain("terminal coding agent")
     expect(frame).toContain("ask nightcode to do something")
-    expect(frame).toContain("Queued: hello there")
+  })
+
+  test("a second prompt inside the session is appended as another turn", async () => {
+    const setup = await renderTui(<App />)
+    await type(setup, "first")
+    await press(setup, ["RETURN"])
+    await type(setup, "second")
+    await press(setup, ["RETURN"])
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("> first")
+    expect(frame).toContain("> second")
+    expect(frame).not.toContain("terminal coding agent")
+  })
+
+  test("/clear empties the session and returns Home", async () => {
+    const setup = await renderTui(<App />)
+    await type(setup, "hello")
+    await press(setup, ["RETURN"])
+    await type(setup, "/clear")
+    await press(setup, ["RETURN"])
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("terminal coding agent")
+    expect(frame).not.toContain("> hello")
+  })
+
+  test("/exit asks the host to exit", async () => {
+    const exits: CliRenderer[] = []
+    const setup = await renderTui(<App onExit={(renderer) => exits.push(renderer)} />)
+    await type(setup, "/exit")
+    await press(setup, ["RETURN"])
+    expect(exits).toHaveLength(1)
   })
 
   test("escape reports that there is nothing to interrupt", async () => {

@@ -24,10 +24,12 @@ interface DialogHostProps {
   layerId: string
   label: string
   title: string
+  seeded: string
 }
 
-function DialogHost({ layerId, label, title }: DialogHostProps) {
+function DialogHost({ layerId, label, title, seeded }: DialogHostProps) {
   const [open, setOpen] = useState(true)
+  const [filter, setFilter] = useState(seeded)
   if (!open) return null
   return (
     <DialogSearchList
@@ -35,6 +37,8 @@ function DialogHost({ layerId, label, title }: DialogHostProps) {
       title={title}
       items={ITEMS}
       layerId={layerId}
+      filter={filter}
+      onFilter={setFilter}
       onSelect={(item) => {
         selected.push(`${label}:${item.id}`)
         setOpen(false)
@@ -56,8 +60,8 @@ function Shell({ stacked }: { stacked: boolean }) {
   return (
     <box width="100%" height="100%">
       <text>shell-visible</text>
-      <DialogHost layerId={stacked ? "bottom" : "only"} label={stacked ? "bottom" : "only"} title="commands" />
-      {stacked ? <DialogHost layerId="top" label="top" title="models" /> : null}
+      <DialogHost layerId={stacked ? "bottom" : "only"} label={stacked ? "bottom" : "only"} title="commands" seeded="" />
+      {stacked ? <DialogHost layerId="top" label="top" title="models" seeded="switch" /> : null}
     </box>
   )
 }
@@ -102,6 +106,13 @@ describe("DialogSearchList", () => {
     expect(frame).not.toContain("/models")
   })
 
+  test("a seeded filter narrows the list before the user types anything", async () => {
+    const setup = await mount(true)
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("/models")
+    expect(frame).not.toContain("/clear")
+  })
+
   test("arrows move the selection and return selects the highlighted item", async () => {
     const setup = await mount()
     await type(setup, "switch")
@@ -110,11 +121,11 @@ describe("DialogSearchList", () => {
     expect(selected).toEqual(["only:agents"])
   })
 
-  test("arrows clamp at both ends of the list", async () => {
-    const first = await mount()
-    await type(first, "switch")
-    await press(first, ["ARROW_UP"])
-    await press(first, ["RETURN"])
+  test("arrows clamp at the top of the list", async () => {
+    const setup = await mount()
+    await type(setup, "switch")
+    await press(setup, ["ARROW_UP"])
+    await press(setup, ["RETURN"])
     expect(selected).toEqual(["only:models"])
   })
 

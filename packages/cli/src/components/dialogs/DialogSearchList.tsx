@@ -13,6 +13,9 @@ export interface DialogSearchListProps {
   theme: Theme
   title: string
   items: readonly DialogItem[]
+  /** Controlled so a caller can seed the filter, which is how the palette absorbs a fast paste of `/exit`. */
+  filter: string
+  onFilter: (value: string) => void
   onSelect: (item: DialogItem) => void
   onCancel: () => void
   /** Responder layer id. Required, because two layers sharing one id silently replace each other. */
@@ -41,6 +44,8 @@ export function DialogSearchList({
   theme,
   title,
   items,
+  filter,
+  onFilter,
   onSelect,
   onCancel,
   layerId,
@@ -48,9 +53,8 @@ export function DialogSearchList({
   width = 56,
   maxVisible = DEFAULT_MAX_VISIBLE,
 }: DialogSearchListProps) {
-  const [query, setQuery] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const matches = matchesQuery(items, query)
+  const matches = matchesQuery(items, filter)
   const cursor = Math.max(
     matches.findIndex((item) => item.id === selectedId),
     0,
@@ -81,7 +85,7 @@ export function DialogSearchList({
       <box borderStyle="rounded" borderColor={theme.border} flexDirection="row" alignItems="center" gap={1} marginBottom={1}>
         <text fg={theme.accent}>{">"}</text>
         <box flexGrow={1}>
-          <input value={query} placeholder={placeholder} focused onInput={setQuery} />
+          <input value={filter} placeholder={placeholder} focused onInput={onFilter} />
         </box>
       </box>
       <box flexDirection="column" height={maxVisible} overflow="hidden">
