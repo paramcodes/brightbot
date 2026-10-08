@@ -1,0 +1,11 @@
+[test]
+# bun test discovers *.test.ts / *.test.tsx under the repository root.
+preload = []
+
+[install]
+# Workspace packages resolve from the root node_modules.
+registry = "https://registry.npmjs.org"
+
+[run]
+# Silence the bun runtime banner so CLI output stays clean.
+bun = true

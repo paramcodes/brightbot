@@ -1,0 +1,25 @@
+{
+  "name": "@nightcode/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Night Code terminal client: OpenTUI React interface, responder chain, and local tool engine.",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "nightcode": "bun run src/index.tsx",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@nightcode/shared": "workspace:*",
+    "@opentui/core": "0.5.17",
+    "@opentui/react": "0.5.17",
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.1",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.3"
+  }
+}
