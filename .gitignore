@@ -1,0 +1,12 @@
+todo.md
+.spike/
+.worktrees/
+orchestrate/
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+*.tsbuildinfo

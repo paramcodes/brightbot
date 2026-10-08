@@ -1,0 +1,426 @@
+{
+  "$comment": "Source of truth for the Night Code build queue. Derives GitHub issues, sub-issues, and the feature map.",
+  "phases": [
+    {
+      "id": 1,
+      "title": "Workspace Scaffolding & Core TUI Foundation",
+      "focus": "Bun monorepo, OpenTUI React shell, layout primitives, responder chain, toasts.",
+      "stack": "Bun Workspaces, OpenTUI, React",
+      "summary": {
+        "what": "A Bun workspace with packages/cli, packages/shared and packages/server, strict TypeScript configs, a biome/lint/test pipeline, and an OpenTUI React application shell that renders a header, an ASCII banner, an input bar, a keyboard responder chain and a toast subsystem.",
+        "why": "Every later phase imports shared types and runs inside the same terminal shell, so the dependency graph, the keyboard event model and the visual vocabulary must exist before any feature does.",
+        "how": "It removes the last excuse for per-package duplication and gives each later phase a fixed place to put its UI and a fixed way to route keypresses."
+      },
+      "commits": [
+        {
+          "id": "1.1",
+          "title": "Initialize Bun workspace and monorepo structure",
+          "files": "package.json, bunfig.toml, packages/cli/package.json, packages/shared/package.json, .gitignore",
+          "what": "Configures Bun workspaces with `packages/cli` and `packages/shared`. Sets up TypeScript base configs (`tsconfig.json` at root and per-package) with strict mode and path aliasing.",
+          "why": "Monorepos allow sharing TypeScript contracts, Zod schemas, and RPC types between the terminal client and the backend server without duplicate types or publishing private packages.",
+          "how": "Establishes the foundational dependency graph and build pipeline, enabling instant imports across packages with zero build latency under Bun."
+        },
+        {
+          "id": "1.2",
+          "title": "Scaffold Open TUI React application shell",
+          "files": "packages/cli/src/index.tsx, packages/cli/src/app.tsx, packages/cli/tsconfig.json",
+          "what": "Bootstraps the Open TUI React terminal renderer with a simple terminal root canvas and a placeholder greeting component.",
+          "why": "Open TUI allows writing terminal interfaces using standard React primitives (`useState`, `useEffect`, JSX flex layouts) while rendering to terminal escape sequences instead of the browser DOM.",
+          "how": "Confirms the terminal rendering pipeline works on raw TTY streams and gives us a reactive component hierarchy for the rest of the UI."
+        },
+        {
+          "id": "1.3",
+          "title": "Create layout primitives: Header, ASCII banner, and InputBar",
+          "files": "packages/cli/src/components/layout/Header.tsx, packages/cli/src/components/layout/Banner.tsx, packages/cli/src/components/input/InputBar.tsx, packages/cli/src/styles/box.ts",
+          "what": "Implements styled ASCII art branding, a responsive top header displaying status indicators, and an interactive terminal input field supporting text entry, cursor movement, and backspacing.",
+          "why": "The terminal screen has strict rectangular column/row limits. We need declarative, reusable components that respect dynamic terminal resize events.",
+          "how": "Delivers the primary interface elements where users view agent status and type prompts."
+        },
+        {
+          "id": "1.4",
+          "title": "Implement terminal responder chain for event management",
+          "files": "packages/cli/src/core/responder/ResponderContext.tsx, packages/cli/src/core/responder/useResponder.ts, packages/cli/src/core/responder/types.ts",
+          "what": "Builds a stack-based responder chain (`pushLayer`, `popLayer`, `isTopLayer`) to route stdin keyboard strokes to the currently active UI layer.",
+          "why": "Terminal environments have no native DOM bubbling or event propagation. Without a centralized responder chain, pressing `Escape` or `Ctrl+C` inside an open modal or input field would either crash the process or trigger multiple conflicting listeners.",
+          "how": "Enables complex floating modals, dialog overlays, and interrupt signals that cleanly trap keypresses and unwind in reverse order."
+        },
+        {
+          "id": "1.5",
+          "title": "Build Toast notification subsystem",
+          "files": "packages/cli/src/components/toast/ToastProvider.tsx, packages/cli/src/components/toast/useToast.ts, packages/cli/src/components/toast/ToastItem.tsx",
+          "what": "Adds a floating toast manager that renders dismissible notification banners (success, error, warning, info) with configurable auto-dismiss timeouts.",
+          "why": "Terminal commands need non-blocking visual feedback for background actions (e.g., config changes, network reconnection, copy actions) without cluttering the main conversation stream.",
+          "how": "Provides an async feedback channel throughout the CLI for background operations."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Navigation, Modals & Persistent Theming",
+      "focus": "Persistent config, themes, reusable dialog list, root command menu, memory router.",
+      "stack": "React Router (Memory), Local Config",
+      "summary": {
+        "what": "A preferences file under `~/.nightcode`, four shipped themes behind a ThemeProvider, one reusable searchable dialog component, a `/`-triggered command palette, and a memory router with Home and Session views.",
+        "why": "The CLI needs durable user settings, a single keyboard-navigation implementation shared by every modal, and a clear separation between the landing screen and an active session.",
+        "how": "Turns every modal into a consumer of one tested component and makes theme and config changes survive restarts."
+      },
+      "commits": [
+        {
+          "id": "2.1",
+          "title": "Add persistent configuration & theme engine",
+          "files": "packages/cli/src/lib/config.ts, packages/cli/src/styles/themes/dracula.ts, packages/cli/src/styles/themes/nightfox.ts, packages/cli/src/styles/themes/index.ts, packages/cli/src/context/ThemeContext.tsx",
+          "what": "Reads and writes user settings to `~/.nightcode/preferences.json`. Exposes a `ThemeProvider` supporting multiple color palettes (Dracula, Nightfox, Catppuccin, Monokai).",
+          "why": "Users need personalized visual configurations that survive process restarts.",
+          "how": "Eliminates hardcoded ANSI color codes across components and establishes disk persistence for user settings."
+        },
+        {
+          "id": "2.2",
+          "title": "Implement generic DialogSearchList component",
+          "files": "packages/cli/src/components/dialogs/DialogSearchList.tsx, packages/cli/src/components/dialogs/DialogBackdrop.tsx",
+          "what": "Creates a reusable modal overlay containing a filterable search input, a scrollable list of items, arrow-key navigation, and selection callbacks.",
+          "why": "Multiple CLI features (command menu, session picker, file mentions, model selector) share identical list-filtering and selection behavior.",
+          "how": "Prevents duplicate keyboard navigation logic across dialogs and ensures consistent UX across all modal views."
+        },
+        {
+          "id": "2.3",
+          "title": "Build root Command Menu (`/` trigger)",
+          "files": "packages/cli/src/components/command-menu/CommandMenu.tsx, packages/cli/src/components/command-menu/commands.ts, packages/cli/src/app.tsx",
+          "what": "Adds a global listener that opens the command palette when `/` is typed into an empty input bar, listing commands like `/clear`, `/sessions`, `/models`, `/agents`, `/usage`, and `/exit`.",
+          "why": "Developers expect quick slash-command shortcuts to control the agent without needing mouse interactions or leaving the terminal.",
+          "how": "Serves as the central command hub for invoking all CLI features and switching modes."
+        },
+        {
+          "id": "2.4",
+          "title": "Integrate React Router Memory Router & Session Shell",
+          "files": "packages/cli/src/router/routes.tsx, packages/cli/src/views/HomeView.tsx, packages/cli/src/views/SessionView.tsx, packages/cli/src/components/layout/RootLayout.tsx",
+          "what": "Configures `createMemoryRouter` from React Router inside the TUI, creating distinct routes for the landing screen and active session chat view.",
+          "why": "Terminal UIs need clear separation between idle/welcome screens and active conversation views without manual boolean state flags in the root component.",
+          "how": "Decouples view logic, isolates screen-specific responders, and enables deep-linking into specific past sessions."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Backend Infrastructure, Database & Observability",
+      "focus": "Hono server, Prisma schema, RPC client types, Sentry middleware, file-backed default store.",
+      "stack": "Hono, Bun, PostgreSQL, Prisma, Sentry",
+      "summary": {
+        "what": "A Hono server on Bun with health check and JSON/CORS middleware, a Prisma schema for User/Session/Message/TokenUsage, Hono RPC route types shared into the CLI, an error-handling middleware, and a local file-backed store so the server boots with no database.",
+        "why": "The chat engine, auth and billing all need an HTTP surface, a persistence contract, and a place for exceptions to land before there are users.",
+        "how": "Gives the CLI compile-time-typed API client and gives operators a production error trail, while the local store keeps every test and every CI run hermetic."
+      },
+      "commits": [
+        {
+          "id": "3.1",
+          "title": "Initialize packages/server with Hono and Bun",
+          "files": "packages/server/package.json, packages/server/src/index.ts, packages/server/src/app.ts, packages/server/tsconfig.json",
+          "what": "Scaffolds the HTTP backend using the Hono web framework running on Bun, configuring CORS, JSON body parsing, and a health check endpoint.",
+          "why": "Hono is ultra-lightweight, runs natively on Bun, and offers end-to-end type safety through Hono RPC.",
+          "how": "Establishes the backend API server that will orchestrate LLM calls, handle authentication, and track usage."
+        },
+        {
+          "id": "3.2",
+          "title": "Configure Prisma ORM with PostgreSQL",
+          "files": "packages/server/prisma/schema.prisma, packages/server/src/lib/db.ts, packages/server/.env.example",
+          "what": "Defines the database schema for `User`, `Session`, `Message`, and `TokenUsage`. Connects to a serverless PostgreSQL instance via Prisma Client, with a file-backed store as the default when no `DATABASE_URL` is present.",
+          "why": "Cloud persistence allows users to retain chat histories, context windows, and credit usage across machines and deployments.",
+          "how": "Provides a scalable relational data store for sessions and billing records, without making a database a prerequisite for developing or testing."
+        },
+        {
+          "id": "3.3",
+          "title": "Set up Hono RPC client in packages/cli",
+          "files": "packages/shared/src/types/api.ts, packages/cli/src/lib/api-client.ts, packages/server/src/routes/sessions.ts",
+          "what": "Exports Hono API route types from `packages/server` and instantiates `hc<AppType>` inside `packages/cli`.",
+          "why": "Hono RPC provides full TypeScript auto-completions and compile-time validation for URL parameters, query strings, and request/response payloads without code generation.",
+          "how": "Catches API contract mismatches immediately during compile time."
+        },
+        {
+          "id": "3.4",
+          "title": "Integrate Sentry error monitoring and observability",
+          "files": "packages/server/src/lib/sentry.ts, packages/server/src/middleware/error-handler.ts, packages/server/src/app.ts",
+          "what": "Adds Sentry middleware for Hono to capture unhandled server exceptions, database connection errors, and downstream AI API failures, plus a structured error response envelope.",
+          "why": "Distributed agents encounter varied external failure modes (rate limits, upstream LLM outages, malformed client streams) that require real-time telemetry in production.",
+          "how": "Provides production-grade error reporting and performance tracking before going live, and a single predictable error shape for the CLI to render."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Real-Time AI Chat Engine & Interruption Flow",
+      "focus": "SSE streaming endpoint, message rendering, optimistic transitions, abort via Esc.",
+      "stack": "Vercel AI SDK, Hono SSE, AbortController",
+      "summary": {
+        "what": "A `POST /api/chat` SSE endpoint backed by `streamText` with a provider boundary (Anthropic, OpenAI, deterministic local mock), terminal message rendering with markdown and thinking blocks, an optimistic transition from Home to Session, and an `Esc`-driven abort that persists a partial response as `interrupted`.",
+        "why": "Model output arrives over seconds, and the user must be able to interrupt it at any moment without killing the process.",
+        "how": "Delivers time-to-first-token in the terminal, a readable conversation surface, and control over token spend."
+      },
+      "commits": [
+        {
+          "id": "4.1",
+          "title": "Build SSE streaming endpoint with Vercel AI SDK on Hono",
+          "files": "packages/server/src/routes/chat.ts, packages/server/src/lib/ai.ts, packages/shared/src/schemas/chat.ts",
+          "what": "Implements `POST /api/chat` using Hono's `streamSSE` and Vercel AI SDK's `streamText`. Provider is selected at the boundary: Anthropic and OpenAI when a key is present, a deterministic scripted provider otherwise so the system is runnable and testable without credentials.",
+          "why": "Large language model responses take seconds to complete; streaming Server-Sent Events guarantees immediate time-to-first-token in the terminal.",
+          "how": "Provides token-by-token streaming back to the terminal client, and keeps the streaming contract identical whether the model is remote or local."
+        },
+        {
+          "id": "4.2",
+          "title": "Build message rendering components (User, Bot, Spinner)",
+          "files": "packages/cli/src/components/chat/MessageList.tsx, packages/cli/src/components/chat/UserMessage.tsx, packages/cli/src/components/chat/BotMessage.tsx, packages/cli/src/components/chat/ThinkingBlock.tsx",
+          "what": "Renders formatted terminal message blocks with markdown support, distinctive borders, sender avatars, and expandable reasoning/thinking token bubbles.",
+          "why": "Raw terminal text lacks visual hierarchy. Proper message bubbles and distinct thinking blocks make long agent thoughts and tool outputs readable.",
+          "how": "Delivers clean visual presentation for conversational responses and chain-of-thought traces."
+        },
+        {
+          "id": "4.3",
+          "title": "Implement optimistic screen transition on prompt submission",
+          "files": "packages/cli/src/views/HomeView.tsx, packages/cli/src/views/SessionView.tsx, packages/cli/src/hooks/useChatSession.ts",
+          "what": "When a user hits `Enter` on the Home screen, immediately creates an in-memory session stub, navigates to `SessionView`, renders the user prompt, and fires the server creation request asynchronously.",
+          "why": "Waiting for a server round-trip before updating the terminal makes the CLI feel sluggish.",
+          "how": "Delivers instant, zero-latency feedback on prompt submission."
+        },
+        {
+          "id": "4.4",
+          "title": "Implement client-side generation abort and interruption via `Esc`",
+          "files": "packages/cli/src/hooks/useChatStream.ts, packages/cli/src/components/input/InputBar.tsx, packages/server/src/routes/chat.ts",
+          "what": "Uses `AbortController` linked to the top-level responder chain. When the user presses `Esc` during generation, the CLI aborts the HTTP SSE stream and instructs the server to persist the partial response with status `interrupted`.",
+          "why": "When an agent starts generating the wrong code or enters an infinite loop, users must be able to cancel immediately without killing the entire CLI process.",
+          "how": "Gives users total control over token consumption and execution flow."
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Agent Modes, Session Resumption & File Mentions",
+      "focus": "Plan vs Build mode, model picker, session history, @ file mentions.",
+      "stack": "System Prompts, Fast-Glob, Date-fns",
+      "summary": {
+        "what": "A Plan/Build mode toggle with per-mode system prompts and a status bar, a model picker with pricing, a session resume dialog backed by the store, and an `@` file-mention picker that respects `.gitignore`.",
+        "why": "Discovery should not be able to edit files, model choice is a cost/speed tradeoff the user owns, and work spans days.",
+        "how": "Removes the two sharpest footguns (unintended edits, lost context) and makes referencing files a keystroke instead of a typed path."
+      },
+      "commits": [
+        {
+          "id": "5.1",
+          "title": "Create Plan Mode vs Build Mode prompt configurations",
+          "files": "packages/shared/src/prompts/plan-mode.ts, packages/shared/src/prompts/build-mode.ts, packages/cli/src/context/AgentModeContext.tsx, packages/cli/src/components/layout/StatusBar.tsx",
+          "what": "Implements an Agent Mode toggle (`Tab` key or `/agents` command) between **Plan Mode** (read-only, architectural analysis, no file modification) and **Build Mode** (full tool access to edit, create, and run bash commands). Updates the prompt sent to the LLM.",
+          "why": "Users often want the model to analyze architecture and propose plans safely before authorizing destructive file edits.",
+          "how": "Prevents unintended code edits during discovery and design discussions."
+        },
+        {
+          "id": "5.2",
+          "title": "Build dynamic model selection dialog (`/models`)",
+          "files": "packages/cli/src/components/dialogs/ModelSelectDialog.tsx, packages/shared/src/constants/models.ts, packages/cli/src/context/ChatConfigContext.tsx",
+          "what": "Adds a modal listing supported models (Claude 3.5 Sonnet, Claude 3 Opus, GPT-4o, Gemini 1.5 Pro) with pricing per million tokens and speeds. Updates session metadata.",
+          "why": "Different tasks require different trade-offs between speed, cost, and reasoning power.",
+          "how": "Allows users to switch models mid-workflow depending on task complexity."
+        },
+        {
+          "id": "5.3",
+          "title": "Build Session History resume dialog (`/sessions`)",
+          "files": "packages/cli/src/components/dialogs/SessionListDialog.tsx, packages/cli/src/hooks/useSessionHistory.ts, packages/server/src/routes/sessions.ts",
+          "what": "Fetches recent sessions from the store, formats timestamps with `date-fns`, displays title snippets in a fuzzy-search dialog, and hydrates the chosen session into the active view upon selection.",
+          "why": "Coding tasks span days; developers must be able to resume context from previous days without re-explaining the project.",
+          "how": "Eliminates lost context and allows seamless continuation of previous work."
+        },
+        {
+          "id": "5.4",
+          "title": "Implement `@` File Mention autocomplete system",
+          "files": "packages/cli/src/components/input/FileMentionMenu.tsx, packages/cli/src/lib/file-scanner.ts, packages/cli/src/components/input/InputBar.tsx",
+          "what": "Typing `@` scans the current working directory (respecting `.gitignore`), presents an inline fuzzy picker of file paths, and inserts the chosen relative path into the input bar.",
+          "why": "Manually typing deep project paths like `packages/server/src/middleware/auth.ts` into a terminal prompt is tedious and error-prone.",
+          "how": "Drastically speeds up referencing specific codebase files directly in prompts."
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Browser-to-CLI OAuth & User Security",
+      "focus": "PKCE, loopback server, browser login, restricted credential store, server-side auth.",
+      "stack": "OAuth PKCE, Loopback Server, 0o600 Permissions",
+      "summary": {
+        "what": "PKCE verifier/challenge generation, an ephemeral loopback HTTP server for the redirect, a browser-launch login command, a credential store at `~/.nightcode/auth.json` with `0o600` permissions, and server middleware that verifies the session token.",
+        "why": "Terminal apps cannot render web login forms, and tokens must never sit in a world-readable file.",
+        "how": "Makes `nightcode login` a one-command browser flow and keeps every API call scoped to one identity."
+      },
+      "commits": [
+        {
+          "id": "6.1",
+          "title": "Build temporary Bun loopback server for OAuth redirects",
+          "files": "packages/cli/src/auth/loopback-server.ts, packages/cli/src/auth/pkce.ts",
+          "what": "Implements PKCE (Proof Key for Code Exchange) code verifier/challenge generation and starts an ephemeral local HTTP server (`port: 0`) that waits for a single incoming OAuth callback request before shutting down.",
+          "why": "Terminal apps cannot render complex web login forms (reCAPTCHA, Passkeys, Google Sign-In). A local loopback server allows the browser to pass the auth token back to the CLI securely.",
+          "how": "Enables seamless browser-based authentication directly from the terminal."
+        },
+        {
+          "id": "6.2",
+          "title": "Integrate browser OAuth flow and launch trigger",
+          "files": "packages/cli/src/auth/clerk.ts, packages/cli/src/commands/login.ts, packages/cli/package.json (add `open`)",
+          "what": "Uses the browser to launch the authorize URL containing the PKCE challenge and loopback callback port. Captures the authorization code and exchanges it for a session token. Clerk is used when configured; otherwise the local token endpoint issues a device-style session.",
+          "why": "Offloads identity management, multi-factor auth, and social sign-on to the identity provider when one is configured, while keeping the CLI usable in development.",
+          "how": "Provides a secure, industry-standard authentication flow with no credentials required to try it."
+        },
+        {
+          "id": "6.3",
+          "title": "Implement secure credentials disk store with restricted file permissions",
+          "files": "packages/cli/src/auth/token-storage.ts, packages/cli/src/auth/useAuth.ts",
+          "what": "Writes received tokens and user metadata to `~/.nightcode/auth.json` with POSIX file permissions strictly set to `0o600` (read/write only by the file owner).",
+          "why": "Storing credentials in world-readable files or raw environment variables exposes tokens to other processes or users on the local machine.",
+          "how": "Secures user tokens against unauthorized local system access."
+        },
+        {
+          "id": "6.4",
+          "title": "Secure server routes with session verification",
+          "files": "packages/server/src/middleware/auth.ts, packages/server/src/app.ts",
+          "what": "Creates Hono middleware to validate session bearer tokens (Clerk JWKS when configured, local HMAC token otherwise). Rejects unauthenticated requests and attaches `userId` to the request context.",
+          "why": "Prevents unauthorized API access and ensures database operations are strictly scoped to the authenticated user.",
+          "how": "Protects backend endpoints and guarantees multi-tenant isolation."
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "SaaS Monetization, Credit Metering & Rate Limiting",
+      "focus": "Credit ledger, gating middleware, token ingestion, `/usage` and `/upgrade` dialogs.",
+      "stack": "Polar SDK, Event Ingestion, Credit Gating",
+      "summary": {
+        "what": "A credit ledger behind a port, pre-flight credit gating that returns `402 Payment Required`, token accounting on stream finish, and CLI dialogs for balance and top-up.",
+        "why": "Model calls cost real money and must be metered per request, and the user needs to see the balance without leaving the terminal.",
+        "how": "Turns token spend into a visible balance and gives the operator a hard stop before an unpaid bill can accumulate."
+      },
+      "commits": [
+        {
+          "id": "7.1",
+          "title": "Integrate Polar SDK for credit management",
+          "files": "packages/server/src/lib/polar.ts, packages/server/src/services/billing.ts, packages/server/package.json",
+          "what": "Configures the Polar SDK when a token is present, defines meters for LLM token ingestion (`nightcode_usage`), links customer accounts to user IDs, and keeps a local ledger as the default in development.",
+          "why": "Running AI agents incur significant API costs; a billing engine is required to meter usage and monetize access.",
+          "how": "Establishes credit tracking and subscription management with a working local equivalent."
+        },
+        {
+          "id": "7.2",
+          "title": "Implement server-side credit balance gating middleware",
+          "files": "packages/server/src/middleware/credits.ts, packages/server/src/routes/chat.ts",
+          "what": "Checks the user's remaining credit balance before initiating any LLM streaming request. Returns `402 Payment Required` if the balance is exhausted.",
+          "why": "Prevents users with zero credits from running up unpaid LLM API bills.",
+          "how": "Protects against abuse and guarantees payment before token consumption."
+        },
+        {
+          "id": "7.3",
+          "title": "Ingest token consumption on generation completion",
+          "files": "packages/server/src/services/token-tracker.ts, packages/server/src/routes/chat.ts",
+          "what": "Extracts input, output, and cache token metrics on stream finish (`onFinish` callback) and asynchronously reports ingestion events to deduct the appropriate credit amount.",
+          "why": "Different models (Opus vs. Haiku) carry radically different costs; billing must reflect exact token counts.",
+          "how": "Automates precise, usage-based credit deduction per request."
+        },
+        {
+          "id": "7.4",
+          "title": "Add `/usage` and `/upgrade` billing CLI dialogs",
+          "files": "packages/cli/src/components/dialogs/UsageDialog.tsx, packages/cli/src/commands/upgrade.ts, packages/cli/src/components/command-menu/commands.ts",
+          "what": "`/usage` displays the current credit balance and recent token deductions. `/upgrade` generates a checkout URL and opens it in the browser.",
+          "why": "Users need transparent visibility into their remaining balance and an effortless way to purchase more credits without leaving the terminal flow.",
+          "how": "Provides a frictionless monetization and self-service top-up loop."
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Client-Side Tool Execution Engine",
+      "focus": "Shared tool schemas, local executors, client-side tool loop, confirmation, grouped rendering.",
+      "stack": "Local Filesystem, Child Process, Client Tool Loop",
+      "summary": {
+        "what": "Zod tool contracts in shared, seven local tool executors that run against `process.cwd()`, a client-side tool loop that feeds results back into the next stream request, an interactive confirmation prompt for destructive tools, and a grouped collapsible rendering of tool calls.",
+        "why": "The agent must edit the code the developer is looking at, which lives on the developer's machine, not on a relay server.",
+        "how": "Makes the backend a stateless proxy while the CLI keeps execution authority, and keeps destructive actions behind an explicit yes."
+      },
+      "commits": [
+        {
+          "id": "8.1",
+          "title": "Define tool schemas and contracts in packages/shared",
+          "files": "packages/shared/src/tools/schemas.ts, packages/shared/src/tools/types.ts",
+          "what": "Defines Zod schemas and descriptions for local tools: `read_file`, `write_file`, `edit_file`, `list_directory`, `glob`, `grep`, `bash`.",
+          "why": "Tool contracts must be shared between the server (which instructs the LLM) and the client (which runs the tools).",
+          "how": "Guarantees strict type safety across the tool invocation boundary."
+        },
+        {
+          "id": "8.2",
+          "title": "Implement local filesystem tool executors in packages/cli",
+          "files": "packages/cli/src/lib/local-tools.ts, packages/cli/src/lib/fs-utils.ts",
+          "what": "Implements the actual execution logic for all 7 tools using Bun's `fs/promises` and `child_process`, executing strictly relative to `process.cwd()` on the user's machine.",
+          "why": "Solves the core architectural limitation of the remote server. The agent must read, search, and edit the code that lives in the developer's local working directory.",
+          "how": "Enables the agent to inspect and modify local project files safely."
+        },
+        {
+          "id": "8.3",
+          "title": "Refactor chat loop to client-side tool execution",
+          "files": "packages/cli/src/hooks/useAgentLoop.ts, packages/cli/src/views/SessionView.tsx, packages/server/src/routes/chat.ts",
+          "what": "Refactors the chat client to intercept tool calls locally, execute them via `local-tools.ts`, and return the output to the model to continue reasoning.",
+          "why": "Completely decouples file execution from the remote server, allowing the backend to remain a stateless proxy while the CLI retains local execution authority.",
+          "how": "The agent can now edit real projects anywhere in the developer's filesystem."
+        },
+        {
+          "id": "8.4",
+          "title": "Add user confirmation prompts for destructive tools",
+          "files": "packages/cli/src/components/dialogs/ConfirmToolDialog.tsx, packages/cli/src/lib/local-tools.ts",
+          "what": "Intercepts `write_file`, `edit_file`, and arbitrary `bash` commands with an interactive terminal confirmation prompt (Allow once, Always allow this session, Deny).",
+          "why": "Unrestricted execution of arbitrary shell commands or file rewrites poses a security risk to the user's codebase and machine.",
+          "how": "Gives developers complete oversight and veto power over destructive actions."
+        },
+        {
+          "id": "8.5",
+          "title": "Group tool executions visually in message list",
+          "files": "packages/cli/src/components/chat/ToolCallBlock.tsx, packages/cli/src/components/chat/BotMessage.tsx",
+          "what": "Groups consecutive tool invocations (e.g., reading 4 files in a row) into a collapsible, formatted accordion showing input parameters, execution duration, and exit status.",
+          "why": "Raw tool outputs can span hundreds of lines, drowning out the model's actual conversational response.",
+          "how": "Keeps the terminal message view clean, compact, and scannable."
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Distribution, Packaging & Production Polish",
+      "focus": "Binary entry point, container deploy config, AI review config, clean exit traps, live demo.",
+      "stack": "bun link, Docker, Railway, CodeRabbit",
+      "summary": {
+        "what": "A `bin/nightcode.js` launcher with TTY capability checks, a Dockerfile plus CI deploy workflow, a CodeRabbit review config, exit traps that restore the terminal, and a recorded demo of every feature with a GIF in the README.",
+        "why": "A CLI that leaves the terminal broken after a crash is not shippable, and a demo is how anyone judges the thing.",
+        "how": "Makes `nightcode` a global command, leaves the shell clean on every exit path, and shows the whole feature set in one recording."
+      },
+      "commits": [
+        {
+          "id": "9.1",
+          "title": "Build executable CLI entry point binary wrapper",
+          "files": "packages/cli/bin/nightcode.js, packages/cli/package.json",
+          "what": "Adds a `#!/usr/bin/env bun` shebang launcher script in `packages/cli/bin`, declares the `\"bin\": { \"nightcode\": \"./bin/nightcode.js\" }` entry point, and validates terminal raw-mode TTY capabilities on startup.",
+          "why": "Users must be able to run `nightcode` as a standard CLI command from any folder on their machine.",
+          "how": "Makes the CLI globally executable via `bun link` or `npm install -g`."
+        },
+        {
+          "id": "9.2",
+          "title": "Add deployment configuration for packages/server",
+          "files": "railway.json, packages/server/Dockerfile, .github/workflows/deploy.yml",
+          "what": "Creates a minimal Dockerfile for Bun to run `packages/server` in production, plus deployment definitions and CI triggers.",
+          "why": "The backend must run on a reliable, public URL to process OAuth callbacks and proxy LLM requests with low latency.",
+          "how": "Provides production cloud hosting for the relay backend and database connection pool. Deployment itself stays an operator action; the repo ships the config, not the deploy."
+        },
+        {
+          "id": "9.3",
+          "title": "Add automated AI code review configuration",
+          "files": ".coderabbit.yaml",
+          "what": "Configures CodeRabbit with project-specific guidelines (enforcing responder stack safety, checking for leakages in tool calls, validating Zod input parsing).",
+          "why": "Catches regressions, unhandled edge cases, and architectural anti-patterns automatically on every pull request.",
+          "how": "Ensures consistent code quality across monorepo packages."
+        },
+        {
+          "id": "9.4",
+          "title": "Add clean exit traps and terminal restore routines",
+          "files": "packages/cli/src/lib/terminal-cleanup.ts, packages/cli/src/index.tsx",
+          "what": "Adds process exit listeners on `SIGINT`, `SIGTERM`, and `uncaughtException` to explicitly restore standard cursor visibility, disable mouse tracking, reset raw mode, and clear alternate screen buffers before exiting.",
+          "why": "If a terminal UI crashes or exits improperly, it can leave the user's terminal in a broken state (hidden cursor, garbled text, non-echoing input).",
+          "how": "Leaves the user's shell completely clean and functional every time the program exits."
+        }
+      ]
+    }
+  ]
+}
