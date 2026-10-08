@@ -1,20 +1,29 @@
 import { cwd } from "node:process"
-import { useKeyboard, useRenderer } from "@opentui/react"
+import { useRenderer } from "@opentui/react"
 import { useState } from "react"
 import { InputBar } from "./components/input/InputBar.js"
 import { Banner } from "./components/layout/Banner.js"
 import { Header } from "./components/layout/Header.js"
 import { exitCleanly } from "./core/renderer.js"
+import { ResponderProvider, useRootKeys } from "./core/responder/useResponder.js"
 import { defaultTheme } from "./styles/theme.js"
 
-/** Header, banner, and composer. The responder chain and toasts land in 1.4 and 1.5. */
+/** Header, banner, composer, and the responder chain that owns every control key. */
 export function App() {
+  return (
+    <ResponderProvider>
+      <AppShell />
+    </ResponderProvider>
+  )
+}
+
+function AppShell() {
   const renderer = useRenderer()
   const theme = defaultTheme
   const [draft, setDraft] = useState("")
 
-  useKeyboard((event) => {
-    if (event.name === "c" && event.ctrl) exitCleanly(renderer)
+  useRootKeys((token) => {
+    if (token === "ctrl+c") exitCleanly(renderer)
   })
 
   return (
