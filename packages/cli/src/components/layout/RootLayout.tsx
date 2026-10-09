@@ -43,7 +43,14 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
 
   useRootKeys((token) => {
     if (token === "ctrl+c") (onExit ?? exitCleanly)(renderer)
-    if (token === "escape") push({ kind: "info", message: "No generation to interrupt" })
+    if (token !== "escape") return
+    // The unhandled fallback rather than a responder layer: a layer registered while a turn streams
+    // sits above the command palette's, so Escape would kill the turn instead of closing the menu.
+    if (chat.generating) {
+      chat.abort()
+      return
+    }
+    push({ kind: "info", message: "No generation to interrupt" })
   })
 
   const changeComposer = (value: string) => {

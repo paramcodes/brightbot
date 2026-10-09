@@ -24,6 +24,14 @@ export interface ScriptedTransport {
 export interface ScriptedTransportOptions {
   /** Park until `release` is called. On by default, so a test that forgets to release sees nothing rather than everything. */
   readonly parked?: boolean
+  /** Park again after this many frames, and hold the stream open until the run is aborted. */
+  readonly parkAfterFrames?: number
+}
+
+/** How a real socket ends: the pending read settles once the signal fires, so the iterator finishes. */
+function untilAborted(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
 }
 
 /**
@@ -31,6 +39,8 @@ export interface ScriptedTransportOptions {
  *
  * Parking it behind an explicit release is what lets a test prove the turn was on screen before the
  * server was ever reached, rather than proving it by looking at a frame the server already answered.
+ * `parkAfterFrames` parks again part way through, which is the only way to stop a turn that has
+ * already started answering without waiting for the answer to finish.
  */
 export function scriptedTransport(
   frames: readonly ChatFrame[] = [{ type: "finish" }],
@@ -39,6 +49,7 @@ export function scriptedTransport(
   const created: NewSession[] = []
   const streamed: ChatRequest[] = []
   const parked = options.parked ?? true
+  const parkAfter = options.parkAfterFrames
   let open = (): void => {}
   const gate = new Promise<void>((resolve) => {
     open = resolve
@@ -62,9 +73,10 @@ export function scriptedTransport(
         streamed.push(request)
         return {
           async *[Symbol.asyncIterator]() {
-            for (const frame of frames) {
+            for (const [index, frame] of frames.entries()) {
               if (signal.aborted) return
               yield frame
+              if (parkAfter !== undefined && index === parkAfter - 1) await untilAborted(signal)
             }
           },
         }

@@ -3,7 +3,7 @@ import type { CliRenderer } from "@opentui/core"
 import { App } from "../src/app.js"
 import { useResponder } from "../src/core/responder/useResponder.js"
 import { frame, press, renderTui, settle, type, untilSettled } from "./harness.js"
-import { scriptedTransport } from "./scripted-transport.js"
+import { ANSWER_FRAMES, scriptedTransport } from "./scripted-transport.js"
 
 /** Mounted as an overlay layer by the last test: proves a layer can own a key before the shell. */
 function ConsumeEscape() {
@@ -124,6 +124,30 @@ describe("app shell", () => {
     const screen = frame(setup)
     expect(screen).not.toContain("filter commands")
     expect(screen).toContain("/usage is not wired up yet")
+  })
+
+  test("with a turn live, escape closes the command menu and leaves the turn running", async () => {
+    const scripted = scriptedTransport(ANSWER_FRAMES)
+    const setup = await renderTui(<App chatTransport={scripted.transport} />)
+
+    await type(setup, "a question that takes a while")
+    await press(setup, ["RETURN"])
+    await type(setup, "/")
+    expect(frame(setup)).toContain("filter commands")
+
+    await press(setup, ["ESCAPE"])
+    const screen = frame(setup)
+    expect(screen).not.toContain("filter commands")
+    expect(screen).not.toContain("No generation to interrupt")
+    // The turn is untouched. `release` has not been called, so the transport has not answered and the
+    // spinner is proof the generation is still live rather than a stale frame.
+    expect(screen.split("\n").some((row) => row.includes("thinking"))).toBe(true)
+    expect(scripted.streamed).toHaveLength(0)
+
+    scripted.release()
+    await untilSettled(setup, () => frame(setup).includes("the answer is 42"))
+    expect(frame(setup)).not.toContain("Interrupted before the answer finished.")
+    setup.renderer.destroy()
   })
 
   test("escape closes the menu and only the menu", async () => {

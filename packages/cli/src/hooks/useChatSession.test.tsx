@@ -151,6 +151,27 @@ describe("useChatSession", () => {
     setup.renderer.destroy()
   })
 
+  test("an abort mid-stream settles the turn as interrupted and keeps exactly the text that arrived", async () => {
+    const scripted = scriptedTransport([{ type: "reasoning", text: "weighing " }, { type: "text", text: "half an " }, { type: "finish" }], {
+      parkAfterFrames: 2,
+    })
+    const setup = await renderTui(<Probe transport={scripted.transport} />)
+
+    current().submit("stop me partway")
+    scripted.release()
+    await untilSettled(setup, () => frame(setup).includes("[half an ]"))
+
+    current().abort()
+    await untilSettled(setup, () => frame(setup).includes("assistant interrupted"))
+
+    // What arrived is what the user saw, so it stays. Only the unreached tail of the reply is gone,
+    // which is why the status rather than the content is what marks the turn.
+    expect(frame(setup)).toContain("assistant interrupted [half an ] [weighing ]")
+    expect(frame(setup)).toContain("settled")
+    expect(current().submit("and now")).toEqual({ accepted: true })
+    setup.renderer.destroy()
+  })
+
   test("reset empties the conversation and forgets the session", async () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)

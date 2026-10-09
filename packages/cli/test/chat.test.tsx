@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { NIGHTCODE_HOME_ENV } from "@nightcode/shared"
-import { frame, renderTui, type, untilSettled } from "./harness.js"
+import { frame, press, renderTui, type, untilSettled } from "./harness.js"
 
 const REASONING = "weighing the options"
 const REPLY = "the scripted answer for the terminal"
@@ -51,16 +51,25 @@ afterAll(() => {
   for (const key of ENV_KEYS) delete process.env[key]
 })
 
-/** The store the server wrote, once both turns are on disk. The assistant row lands after its stream ends. */
-async function persistedRows(): Promise<StoreRow[]> {
+/**
+ * The last turn the server wrote, waited for: the user row and the assistant row.
+ *
+ * A turn is two rows and the assistant row lands after its stream ends, so a turn that was stopped still
+ * lands. `atLeast` is how many rows the store must hold before the last two belong to the turn under test.
+ */
+async function persistedRows(atLeast = 2): Promise<StoreRow[]> {
   const deadline = Date.now() + 5000
   let rows: StoreRow[] = []
   while (Date.now() < deadline) {
-    rows = (JSON.parse(readFileSync(join(home, "store.json"), "utf8")) as { messages: StoreRow[] }).messages
-    if (rows.length === 2) return rows
+    rows = (JSON.parse(readFileSync(join(home, "store.json"), "utf8")) as { messages: StoreRow[] }).messages.map((row) => ({
+      role: row.role,
+      content: row.content,
+      status: row.status,
+    }))
+    if (rows.length >= atLeast) return rows.slice(-2)
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
-  throw new Error(`The store never held both rows. It holds ${JSON.stringify(rows)}`)
+  throw new Error(`The store never held ${atLeast} rows. It holds ${JSON.stringify(rows)}`)
 }
 
 describe("chat against the real server", () => {
@@ -91,10 +100,46 @@ describe("chat against the real server", () => {
     expect(answered).toContain("thinking · 3 words")
     expect(answered).toContain(REPLY)
 
-    expect((await persistedRows()).map((row) => ({ role: row.role, content: row.content, status: row.status }))).toEqual([
+    expect(await persistedRows()).toEqual([
       { role: "user", content: PROMPT, status: "complete" },
       { role: "assistant", content: REPLY, status: "complete" },
     ])
     setup.renderer.destroy()
+  })
+
+  test("escape mid-stream interrupts the turn, and the server keeps the answer that arrived", async () => {
+    // 400ms a word leaves roughly two seconds of stream after the word this waits on, so the Escape below
+    // lands mid-turn on a slow machine as well as a fast one. The scripted model resolves its knobs per
+    // request, so this reaches this test's turn and no other.
+    process.env.NIGHTCODE_SCRIPTED_DELAY_MS = "400"
+    const setup = await renderTui(<App />)
+    try {
+      await type(setup, PROMPT)
+      setup.mockInput.pressEnter()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await setup.flush()
+
+      // "scripted" is the second word of the reply and the reasoning never contains it, so seeing it means
+      // the assistant body has started filling and the model has words left to send.
+      await untilSettled(setup, () => frame(setup).includes("scripted"), 8000)
+      await press(setup, ["ESCAPE"])
+      await untilSettled(setup, () => frame(setup).includes("Interrupted before the answer finished."), 8000)
+
+      expect(frame(setup)).toContain("Interrupted before the answer finished.")
+
+      // Both cases in this file share one temp home, so this turn's rows are only complete once four are there.
+      const rows = await persistedRows(4)
+      expect(rows[0]).toEqual({ role: "user", content: PROMPT, status: "complete" })
+      expect(rows[1]?.role).toBe("assistant")
+      expect(rows[1]?.status).toBe("interrupted")
+      expect(rows[1]?.content.length).toBeGreaterThan(0)
+      expect(REPLY.startsWith(rows[1]?.content ?? "")).toBe(true)
+      expect(rows[1]?.content).not.toBe(REPLY)
+      // What the server kept is what the user was already reading, not a second rendering of it.
+      expect(frame(setup)).toContain((rows[1]?.content ?? "").trim())
+    } finally {
+      process.env.NIGHTCODE_SCRIPTED_DELAY_MS = DELAY_MS
+      setup.renderer.destroy()
+    }
   })
 })
