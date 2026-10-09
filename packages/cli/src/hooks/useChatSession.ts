@@ -3,7 +3,6 @@ import type { ChatRequest } from "@nightcode/shared"
 import { useRef, useState } from "react"
 import type { ChatTransport } from "../core/chat/transport.js"
 import type { ChatMessage, ChatMessageStatus } from "../core/chat/types.js"
-import { DEFAULT_PREFERENCES } from "../lib/config.js"
 import { useChatStream } from "./useChatStream.js"
 
 /** The create-session route refuses a longer title, so the client's own cap is the same number. */
@@ -17,7 +16,7 @@ export interface ChatSession {
   readonly messages: readonly ChatMessage[]
   readonly sessionId: string | null
   readonly generating: boolean
-  readonly submit: (prompt: string) => SubmitOutcome
+  readonly submit: (prompt: string, model: string) => SubmitOutcome
   readonly abort: () => void
   readonly reset: () => void
 }
@@ -59,7 +58,7 @@ export function useChatSession(transport: ChatTransport): ChatSession {
     setMessages((current) => current.map((message) => (message.id === id ? apply(message) : message)))
   }
 
-  const submit = (prompt: string): SubmitOutcome => {
+  const submit = (prompt: string, model: string): SubmitOutcome => {
     if (stream.active) return { accepted: false, reason: "A turn is already running" }
 
     const question: ChatMessage = { id: randomUUID(), role: "user", content: prompt, reasoning: "", status: "complete", error: null }
@@ -73,7 +72,7 @@ export function useChatSession(transport: ChatTransport): ChatSession {
       try {
         let id = sessionId
         if (id === null) {
-          id = (await transport.createSession({ title: sessionTitle(prompt), model: DEFAULT_PREFERENCES.model })).id
+          id = (await transport.createSession({ title: sessionTitle(prompt), model })).id
           if (generation.current !== turn) return "interrupted"
           setSessionId(id)
         }

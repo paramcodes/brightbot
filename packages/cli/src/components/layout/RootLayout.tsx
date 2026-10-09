@@ -12,6 +12,7 @@ import { HomeView } from "../../views/HomeView.js"
 import { SessionView } from "../../views/SessionView.js"
 import { CommandMenu } from "../command-menu/CommandMenu.js"
 import type { Command } from "../command-menu/commands.js"
+import { ModelSelectDialog } from "../dialogs/ModelSelectDialog.js"
 import { InputBar } from "../input/InputBar.js"
 import { useToast } from "../toast/useToast.js"
 import { Header } from "./Header.js"
@@ -30,13 +31,15 @@ export function headerStatus(chat: Pick<ChatSession, "generating" | "messages">)
 /** Header, the routed body, the composer, the hint row, and the `/` palette. */
 export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const renderer = useRenderer()
-  const { theme, mode, model, setMode } = usePreferences()
+  const { theme, mode, model, setMode, setModel } = usePreferences()
   const { path, navigate } = useRouter()
   const { push } = useToast()
   const [composer, setComposer] = useState("")
   const composerRef = useRef("")
   const [filter, setFilter] = useState("")
   const [menuOpen, setMenuOpen] = useState(false)
+  const [modelFilter, setModelFilter] = useState("")
+  const [modelsOpen, setModelsOpen] = useState(false)
   const chat = useChatSession(chatTransport)
 
   const toggleMode = () => setMode(mode === "plan" ? "build" : "plan")
@@ -76,8 +79,20 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     setFilter("")
   }
 
+  const closeModelPicker = () => {
+    setModelsOpen(false)
+    setModelFilter("")
+  }
+
+  // Both modals take the printable keys the composer would otherwise eat, so both unfocus it. The
+  // keyed remount is what the palette always needed: the slash that opened it was consumed, so the
+  // composer's value never changes and React would leave the text in place.
+  const modalOpen = menuOpen || modelsOpen
+
   const submit = (prompt: string) => {
-    const outcome = chat.submit(prompt)
+    // The model the user picked has to reach the turn, or the picker changes a label and nothing
+    // else: the session row is what the server resolves a provider from.
+    const outcome = chat.submit(prompt, model)
     if (!outcome.accepted) {
       push({ kind: "warning", message: outcome.reason })
       return
@@ -100,6 +115,16 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
       ;(onExit ?? exitCleanly)(renderer)
       return
     }
+    if (command.id === "models") {
+      setModelsOpen(true)
+      return
+    }
+    if (command.id === "agents") {
+      // Two values is a switch, not a list, so it goes through the same flip `tab` performs rather
+      // than through a dialog that needs a row to move through.
+      toggleMode()
+      return
+    }
     push({ kind: "info", message: `${command.name} is not wired up yet` })
   }
 
@@ -116,10 +141,10 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
         remount is the only thing that resets it.
       */}
       <InputBar
-        key={menuOpen ? "composer-behind-palette" : "composer"}
+        key={modalOpen ? "composer-behind-modal" : "composer"}
         theme={theme}
         value={composer}
-        focused={!menuOpen}
+        focused={!modalOpen}
         onChange={changeComposer}
         onSubmit={submit}
       />
@@ -127,6 +152,18 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
         <text fg={theme.dim}>tab switch mode · / commands · @ mention a file · esc interrupt · ctrl+c quit</text>
       </box>
       {menuOpen ? <CommandMenu theme={theme} filter={filter} onFilter={setFilter} onRun={runCommand} onClose={closeMenu} /> : null}
+      {modelsOpen ? (
+        <ModelSelectDialog
+          theme={theme}
+          filter={modelFilter}
+          onFilter={setModelFilter}
+          onSelect={(modelId) => {
+            setModel(modelId)
+            closeModelPicker()
+          }}
+          onClose={closeModelPicker}
+        />
+      ) : null}
     </box>
   )
 }

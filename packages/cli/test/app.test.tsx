@@ -1,9 +1,41 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { NIGHTCODE_HOME_ENV } from "@nightcode/shared"
 import type { CliRenderer } from "@opentui/core"
 import { App } from "../src/app.js"
 import { useResponder } from "../src/core/responder/useResponder.js"
 import { frame, press, renderTui, settle, type TuiHarness, type, untilSettled } from "./harness.js"
 import { ANSWER_FRAMES, scriptedTransport } from "./scripted-transport.js"
+
+/**
+ * Wide enough that the working directory fits whole, so the mode and model cells survive the header's
+ * truncation. `spinnerVisible` explains why the header is otherwise a cwd-dependent surface.
+ */
+const WIDE = { width: 240, height: 30 }
+
+let home: string
+let previousHome: string | undefined
+
+beforeEach(() => {
+  // The mode and model are live preferences now, so a test that flips one writes preferences.json.
+  // Point the home at a scratch directory so the operator's own file is never touched.
+  previousHome = process.env[NIGHTCODE_HOME_ENV]
+  home = mkdtempSync(join(tmpdir(), "nightcode-app-"))
+  process.env[NIGHTCODE_HOME_ENV] = home
+})
+
+afterEach(() => {
+  rmSync(home, { recursive: true, force: true })
+  if (previousHome === undefined) delete process.env[NIGHTCODE_HOME_ENV]
+  else process.env[NIGHTCODE_HOME_ENV] = previousHome
+})
+
+/** The header is the one surface that shows a mode or a model, and it is the top row. */
+function headerRow(setup: TuiHarness): string {
+  return frame(setup).split("\n")[0] ?? ""
+}
 
 /** Mounted as an overlay layer by the last test: proves a layer can own a key before the shell. */
 function ConsumeEscape() {
@@ -197,5 +229,78 @@ describe("app shell", () => {
     )
     await press(setup, ["ESCAPE"])
     expect(setup.captureCharFrame()).not.toContain("No generation to interrupt")
+  })
+
+  test("tab flips the mode the header shows, and again", async () => {
+    const setup = await renderTui(<Shell />, WIDE)
+    expect(headerRow(setup)).toContain("plan")
+    expect(headerRow(setup)).not.toContain("build")
+
+    await press(setup, ["TAB"])
+    let row = headerRow(setup)
+    expect(row).toContain("build")
+    expect(row).not.toContain("plan")
+
+    await press(setup, ["TAB"])
+    row = headerRow(setup)
+    expect(row).toContain("plan")
+    expect(row).not.toContain("build")
+  })
+
+  test("a model chosen from /models is on the header and is the model the next turn sends", async () => {
+    const scripted = scriptedTransport([{ type: "finish" }], { parked: false })
+    const setup = await renderTui(<App chatTransport={scripted.transport} />, WIDE)
+    expect(headerRow(setup)).toContain("claude-3-5-sonnet")
+
+    await type(setup, "/models")
+    const palette = frame(setup)
+    expect(palette).toContain("commands")
+    expect(palette).toContain("/models")
+    await press(setup, ["RETURN"])
+
+    const picker = frame(setup)
+    expect(picker).toContain("filter models")
+    expect(picker).toContain("Claude Haiku 4.5")
+    expect(picker).toContain("$1 in / $5 out per MTok")
+    expect(picker).toContain("GPT-5 pro")
+
+    await type(setup, "haiku")
+    expect(frame(setup)).not.toContain("GPT-5 pro")
+    await press(setup, ["RETURN"])
+    expect(frame(setup)).not.toContain("filter models")
+    expect(headerRow(setup)).toContain("claude-haiku-4-5")
+
+    await type(setup, "what does this repo do")
+    await press(setup, ["RETURN"])
+    await untilSettled(setup, () => scripted.created.length === 1)
+
+    expect(scripted.created).toEqual([{ title: "what does this repo do", model: "claude-haiku-4-5" }])
+  })
+
+  test("/agents flips the mode the header shows", async () => {
+    const setup = await renderTui(<Shell />, WIDE)
+    expect(headerRow(setup)).toContain("plan")
+
+    await type(setup, "/agents")
+    await press(setup, ["RETURN"])
+    const row = headerRow(setup)
+    expect(row).toContain("build")
+    expect(row).not.toContain("plan")
+  })
+
+  test("escape leaves the model picker and its filter, and the header is untouched", async () => {
+    const setup = await renderTui(<Shell />, WIDE)
+    await type(setup, "/models")
+    await press(setup, ["RETURN"])
+    expect(frame(setup)).toContain("filter models")
+
+    await type(setup, "haiku")
+    expect(frame(setup)).toContain("Claude Haiku 4.5")
+    expect(frame(setup)).not.toContain("GPT-5 pro")
+
+    await press(setup, ["ESCAPE"])
+    expect(frame(setup)).not.toContain("filter models")
+    expect(headerRow(setup)).toContain("claude-3-5-sonnet")
+    expect(headerRow(setup)).toContain("plan")
   })
 })
