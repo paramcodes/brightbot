@@ -28,11 +28,22 @@ export async function renderTui(node: ReactNode, viewport: { width: number; heig
  * A keypress updates React state on a scheduled task, and the renderer's own `flush()` does not yield
  * the event loop, so the macro-task tick comes first. Without it a frame captured straight after a
  * keypress shows the previous render.
+ *
+ * The second tick matters more than it looks: pushing a responder layer happens in a passive effect,
+ * which React runs after the render commits. One tick can land before that effect, so a key sent in the
+ * same tick is dispatched to the layer that is still being registered. Two ticks make the register-then-
+ * dispatch order deterministic, which is what stops the command-menu tests from racing.
  */
 export async function settle(setup: TuiHarness): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await tick()
+  await setup.flush()
+  await tick()
   await setup.flush()
   await setup.waitForVisualIdle({ maxFrames: 10 })
+}
+
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 export function frame(setup: TuiHarness): string {
