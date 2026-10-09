@@ -71,7 +71,7 @@ interface Turn {
   readonly store: Store
   readonly session: Session
   readonly body: ChatRequest
-  readonly selectModel: () => Model
+  readonly selectModel: (model: string) => Model
 }
 
 async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSignal): Promise<void> {
@@ -86,7 +86,7 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
   }
 
   const result = await relayTurn(
-    turn.selectModel().stream({ model: turn.session.model, messages: turn.body.messages, signal }),
+    turn.selectModel(turn.session.model).stream({ model: turn.session.model, messages: turn.body.messages, signal }),
     write,
     signal,
   )
@@ -110,12 +110,14 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
 
 /**
  * The route takes the model as a source resolved per request, so the provider choice and the scripted
- * knobs are read from the environment at request time rather than frozen at import.
+ * knobs are read from the environment at request time rather than frozen at import. The session's model
+ * id is passed through, because the catalog decides which provider owns an id and a session that picked
+ * `gpt-5` should not be answered by Anthropic.
  */
 // The return type is left inferred. Naming it `Hono` widens the route's schema to `BlankSchema`, which
 // erases this route from `hc<AppType>` and leaves the CLI with a client that cannot see the one route
 // the whole streaming path depends on.
-export function createChatRoute(selectModel: () => Model = () => resolveModel(process.env)) {
+export function createChatRoute(selectModel: (model: string) => Model = (model) => resolveModel(process.env, model)) {
   return new Hono().post(
     "/",
     zValidator("json", chatRequestSchema, (result, _c) => (result.success ? undefined : errorResponse(400, z.prettifyError(result.error)))),

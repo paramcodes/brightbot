@@ -33,6 +33,23 @@ describe("resolveModelKind", () => {
     expect(resolveModelKind({ NIGHTCODE_MODEL_PROVIDER: "anthropic" })).toBe("anthropic")
   })
 
+  test("a catalogued model id names its own provider, whatever key the machine holds", () => {
+    // The picker is reachable now, so a session that asked for gpt-5 must not be answered by Anthropic
+    // just because ANTHROPIC_API_KEY is the only key present.
+    expect(resolveModelKind({ ANTHROPIC_API_KEY: "key" }, "gpt-5")).toBe("openai")
+    expect(resolveModelKind({ ANTHROPIC_API_KEY: "key" }, "gpt-5-mini")).toBe("openai")
+    expect(resolveModelKind({ OPENAI_API_KEY: "key" }, "claude-opus-4-5")).toBe("anthropic")
+  })
+
+  test("the explicit override still beats a catalogued id, so a test stays hermetic", () => {
+    expect(resolveModelKind({ NIGHTCODE_MODEL_PROVIDER: "scripted" }, "gpt-5")).toBe("scripted")
+  })
+
+  test("an id outside the catalog falls through to the key check", () => {
+    expect(resolveModelKind({ OPENAI_API_KEY: "key" }, "claude-3-5-sonnet")).toBe("openai")
+    expect(resolveModelKind({}, "claude-3-5-sonnet")).toBe("scripted")
+  })
+
   test("an unknown provider falls through to the key check", () => {
     expect(resolveModelKind({ NIGHTCODE_MODEL_PROVIDER: "gemini", OPENAI_API_KEY: "key" })).toBe("openai")
     expect(resolveModelKind({ NIGHTCODE_MODEL_PROVIDER: "gemini" })).toBe("scripted")

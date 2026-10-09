@@ -250,7 +250,7 @@ describe("app shell", () => {
   test("a model chosen from /models is on the header and is the model the next turn sends", async () => {
     const scripted = scriptedTransport([{ type: "finish" }], { parked: false })
     const setup = await renderTui(<App chatTransport={scripted.transport} />, WIDE)
-    expect(headerRow(setup)).toContain("claude-3-5-sonnet")
+    expect(headerRow(setup)).toContain("claude-sonnet-4-5")
 
     await type(setup, "/models")
     const palette = frame(setup)
@@ -300,7 +300,7 @@ describe("app shell", () => {
 
     await press(setup, ["ESCAPE"])
     expect(frame(setup)).not.toContain("filter models")
-    expect(headerRow(setup)).toContain("claude-3-5-sonnet")
+    expect(headerRow(setup)).toContain("claude-sonnet-4-5")
     expect(headerRow(setup)).toContain("plan")
   })
 })

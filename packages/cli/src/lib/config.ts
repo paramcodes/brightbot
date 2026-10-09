@@ -14,7 +14,9 @@ export interface Preferences {
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: DEFAULT_THEME,
   mode: "plan",
-  model: "claude-3-5-sonnet",
+  // Matches the Anthropic adapter's own default and a row of the shared model catalog, so the header's
+  // model cell always names a model the picker can show and the provider can actually call.
+  model: "claude-sonnet-4-5",
 }
 
 export interface ConfigStore {

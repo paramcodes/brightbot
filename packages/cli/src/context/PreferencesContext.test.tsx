@@ -96,7 +96,7 @@ describe("PreferencesProvider", () => {
     const screen = setup.captureCharFrame()
     expect(screen).toContain("theme:dracula")
     expect(screen).toContain("mode:plan")
-    expect(screen).toContain("model:claude-3-5-sonnet")
+    expect(screen).toContain("model:claude-sonnet-4-5")
     expect(fgOf(setup, "swatch").slice(0, 3)).toEqual(rgb(THEMES.dracula.accent))
   })
 
@@ -126,7 +126,7 @@ describe("PreferencesProvider", () => {
     expect(fgOf(setup, "swatch").slice(0, 3)).toEqual(rgb(THEMES.catppuccin.accent))
 
     const stored: unknown = JSON.parse(readFileSync(PREFERENCES_PATH(), "utf8"))
-    expect(stored).toEqual({ theme: "catppuccin", mode: "plan", model: "claude-3-5-sonnet" })
+    expect(stored).toEqual({ theme: "catppuccin", mode: "plan", model: "claude-sonnet-4-5" })
   })
 
   test("setMode and setModel update the live values and persist both", async () => {

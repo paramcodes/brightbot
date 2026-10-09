@@ -1,4 +1,5 @@
 import type { ChatFrame, ChatMessage } from "@nightcode/shared"
+import { MODELS } from "@nightcode/shared"
 import type { ModelMessage } from "ai"
 import { anthropicModel } from "./providers/anthropic.js"
 import { openaiModel } from "./providers/openai.js"
@@ -35,23 +36,29 @@ function isModelKind(value: string | undefined): value is ModelKind {
 }
 
 /**
- * An explicit `NIGHTCODE_MODEL_PROVIDER` wins over the key check, so a test on a machine that exports
- * `ANTHROPIC_API_KEY` stays hermetic.
+ * Which provider answers a turn.
+ *
+ * An explicit `NIGHTCODE_MODEL_PROVIDER` wins over everything, so a test on a machine that exports a key
+ * stays hermetic. After that the requested model id decides, because the shared catalog already records
+ * which provider owns each id and a session picked `gpt-5` should not be answered by Anthropic. The key
+ * check is the last resort, for a session row whose model predates the catalog.
  */
-export function resolveModelKind(environment: Record<string, string | undefined>): ModelKind {
+export function resolveModelKind(environment: Record<string, string | undefined>, model?: string): ModelKind {
   const explicit = environment.NIGHTCODE_MODEL_PROVIDER
   if (isModelKind(explicit)) return explicit
+  const owner = MODELS.find((option) => option.id === model)?.provider
+  if (isModelKind(owner)) return owner
   if (environment.ANTHROPIC_API_KEY) return "anthropic"
   if (environment.OPENAI_API_KEY) return "openai"
   return "scripted"
 }
 
-export function resolveModel(environment: Record<string, string | undefined>): Model {
-  switch (resolveModelKind(environment)) {
+export function resolveModel(environment: Record<string, string | undefined>, model?: string): Model {
+  switch (resolveModelKind(environment, model)) {
     case "anthropic":
-      return anthropicModel()
+      return anthropicModel(model)
     case "openai":
-      return openaiModel()
+      return openaiModel(model)
     case "scripted":
       return scriptedModel()
   }
