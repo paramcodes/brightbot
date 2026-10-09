@@ -42,10 +42,3 @@ export const chatFrameSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("error"), code: z.string().min(1), message: z.string() }),
 ])
 export type ChatFrame = z.infer<typeof chatFrameSchema>
-
-/** The two variants that carry text a caller accumulates. */
-export type ContentFrame = Extract<ChatFrame, { text: string }>
-
-export function isContentFrame(frame: ChatFrame): frame is ContentFrame {
-  return frame.type === "text" || frame.type === "reasoning"
-}

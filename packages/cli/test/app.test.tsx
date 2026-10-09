@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { CliRenderer } from "@opentui/core"
 import { App } from "../src/app.js"
 import { useResponder } from "../src/core/responder/useResponder.js"
-import { frame, press, renderTui, settle, type, untilSettled } from "./harness.js"
+import { frame, press, renderTui, settle, type TuiHarness, type, untilSettled } from "./harness.js"
 import { ANSWER_FRAMES, scriptedTransport } from "./scripted-transport.js"
 
 /** Mounted as an overlay layer by the last test: proves a layer can own a key before the shell. */
@@ -15,6 +15,21 @@ function ConsumeEscape() {
 function Shell(props: { onExit?: (renderer: CliRenderer) => void }) {
   const scripted = scriptedTransport([{ type: "finish" }], { parked: false })
   return <App {...props} chatTransport={scripted.transport} />
+}
+
+/**
+ * True while a content-less turn is in flight, read from the spinner's label in the body.
+ *
+ * These tests do not read the header's status cell for the same reason: the header drops or truncates
+ * that cell when the working directory is long, and a worktree path is far longer than the checkout
+ * path, so a header assertion is cwd-dependent and hangs in the isolated verification worktrees. The
+ * body's label is what the user reads, and it survives a truncated header. The status logic itself is a
+ * pure function and is covered directly in `layout.test.tsx`.
+ */
+function spinnerVisible(setup: TuiHarness): boolean {
+  return frame(setup)
+    .split("\n")
+    .some((row) => row.includes("thinking"))
 }
 
 describe("app shell", () => {
@@ -46,18 +61,8 @@ describe("app shell", () => {
     const setup = await renderTui(<Shell />)
     await type(setup, "first")
     await press(setup, ["RETURN"])
-    // The wait is on the spinner's label in the body, not the header's status cell: the header drops or
-    // truncates that cell when the working directory is long (a worktree path is much longer than the
-    // checkout path), so a header wait is cwd-dependent and hangs there. "thinking" is present only while
-    // a content-less turn is in flight, so its absence is the first turn having settled, which is what
-    // has to be true before the second prompt can be accepted.
-    await untilSettled(
-      setup,
-      () =>
-        frame(setup)
-          .split("\n")
-          .some((row) => row.includes("thinking")) === false,
-    )
+    // See `spinnerLabel` for why this waits on the body rather than the header's status cell.
+    await untilSettled(setup, () => !spinnerVisible(setup))
     await type(setup, "second")
     await press(setup, ["RETURN"])
     const screen = frame(setup)

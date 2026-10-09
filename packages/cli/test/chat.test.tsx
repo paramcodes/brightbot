@@ -89,9 +89,9 @@ describe("chat against the real server", () => {
     expect(optimistic).toContain("nightcode")
     expect(optimistic).not.toContain(REASONING)
     expect(optimistic).not.toContain(REPLY)
-    // The in-flight turn is shown by the spinner's label in the body. The header's status cell is not
-    // asserted here: it drops or truncates that cell when the working directory is long, and a worktree
-    // path is far longer than the checkout path, so a header assertion would be cwd-dependent.
+    // The in-flight turn is read from the spinner's label in the body rather than the header's status
+    // cell. The header truncates that cell when the working directory is long, and the isolated
+    // verification worktrees sit far deeper than the checkout, so a header assertion is cwd-dependent.
     expect(optimistic.split("\n").some((row) => row.includes("thinking"))).toBe(true)
 
     await untilSettled(setup, () => frame(setup).includes(REPLY))
