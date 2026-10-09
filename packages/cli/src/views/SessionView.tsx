@@ -5,10 +5,16 @@ export interface SessionTurn {
   prompt: string
 }
 
-const nextTurnId = 1
+let nextTurnId = 1
 
 export function sessionTurn(prompt: string): SessionTurn {
-  return { id: nextTurnId, prompt }
+  const id = nextTurnId
+  nextTurnId += 1
+  return { id, prompt }
+}
+
+export function resetSessionTurnIds(): void {
+  nextTurnId = 1
 }
 
 export interface SessionViewProps {
