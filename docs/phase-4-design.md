@@ -99,12 +99,12 @@ succeeded. A rejected `writeSSE` is the other way a client leaves, and it conver
 controller, so both paths produce one status.
 
 `Escape` stays on `RootLayout`'s `onUnhandled` fallback rather than a new responder layer. The
-fallback runs only when every layer returns `false`, which is the precedence the feature wants. The
+fallback runs only when every layer returns `false`, which is the precedence the feature wants: the
 command palette's layer consumes `Escape` first and closes the menu, and the interrupt runs only when
 nothing else claimed the key. A layer would sit above the palette whenever it registers later, so the
 precedence would depend on registration order instead of on the chain's own rule. The existing test
-"escape reports that there is nothing to interrupt" keeps passing, and a second assertion proves the
-abort wins when a generation is live.
+"escape reports that there is nothing to interrupt" keeps passing, a second test proves the interrupt
+wins when a generation is live, and a third proves the palette keeps the key when it is open.
 
 ### The store
 
