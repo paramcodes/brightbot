@@ -20,7 +20,7 @@ export interface ModelRequest {
 
 /**
  * Deliberately not the AI SDK's `LanguageModel`. That interface is wide, and every future capability
- * (Phase 8 tools, Phase 7 usage) would have to be implemented in the fake before it worked.
+ * (tools, token usage) would have to be implemented in the fake before it worked.
  */
 export interface Model {
   readonly name: string

@@ -17,8 +17,8 @@ export function openaiModel(modelName: string = resolveOpenAIModelName(process.e
         messages: toModelMessages(request.messages),
         abortSignal: request.signal,
       })
-      // Phase 7 meters `totalUsage` off the `finish` part and Phase 8 renders the `tool-*` parts. Both
-      // are dropped here until the phase that owns them lands.
+      // Every other part type is dropped. The two that matter later are usage, which arrives on the
+      // `finish` part, and tool calls, which arrive as `tool-*` parts. Both are out of this phase's scope.
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") yield { type: "text", text: part.text }
         else if (part.type === "reasoning-delta") yield { type: "reasoning", text: part.text }
