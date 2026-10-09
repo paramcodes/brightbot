@@ -13,10 +13,28 @@ for SHA in $COMMITS; do
   rm -rf "$DIR"
   mkdir -p "$ROOT/.worktrees"
   git worktree add -q --detach "$DIR" "$SHA" || { echo "worktree failed for $SHA"; FAIL=1; continue; }
-  # Bun installs workspace dependencies per package, so the worktree borrows each node_modules.
+  # Bun installs workspace dependencies per package, so the worktree borrows each node_modules. The
+  # borrow is per entry rather than the directory as a whole, because each live node_modules symlinks
+  # @nightcode/shared back at the live packages/shared: a whole-directory link would make every
+  # worktree typecheck against shared's latest source rather than the one in the commit under test. The
+  # workspace packages are the exception and resolve to this worktree's own copy, so a widening breaks
+  # only the commits after it.
   ln -s "$ROOT/node_modules" "$DIR/node_modules"
   for pkg in "$ROOT"/packages/*/node_modules; do
-    [ -d "$pkg" ] && ln -s "$pkg" "$DIR/packages/$(basename "$(dirname "$pkg")")/node_modules"
+    [ -d "$pkg" ] || continue
+    name=$(basename "$(dirname "$pkg")")
+    mkdir -p "$DIR/packages/$name/node_modules"
+    for dep in "$pkg"/* "$pkg"/.[!.]*; do
+      base=$(basename "$dep")
+      case "$base" in "." | ".." | "@nightcode") continue ;; esac
+      [ -e "$dep" ] || continue
+      ln -s "$dep" "$DIR/packages/$name/node_modules/$base"
+    done
+    mkdir -p "$DIR/packages/$name/node_modules/@nightcode"
+    for dep in "$pkg"/@nightcode/*; do
+      [ -e "$dep" ] || continue
+      ln -s "$DIR/packages/$(basename "$dep")" "$DIR/packages/$name/node_modules/@nightcode/$(basename "$dep")"
+    done
   done
   (
     cd "$DIR"
