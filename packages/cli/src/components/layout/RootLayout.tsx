@@ -2,12 +2,11 @@ import { cwd } from "node:process"
 import type { CliRenderer } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useRef, useState } from "react"
-import { useTheme } from "../../context/ThemeContext.js"
+import { usePreferences } from "../../context/PreferencesContext.js"
 import type { ChatTransport } from "../../core/chat/transport.js"
 import { exitCleanly } from "../../core/renderer.js"
 import { useRootKeys } from "../../core/responder/useResponder.js"
 import { type ChatSession, useChatSession } from "../../hooks/useChatSession.js"
-import { DEFAULT_PREFERENCES } from "../../lib/config.js"
 import { ROUTES, RouteView, useRouter } from "../../router/routes.js"
 import { HomeView } from "../../views/HomeView.js"
 import { SessionView } from "../../views/SessionView.js"
@@ -31,18 +30,23 @@ export function headerStatus(chat: Pick<ChatSession, "generating" | "messages">)
 /** Header, the routed body, the composer, the hint row, and the `/` palette. */
 export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const renderer = useRenderer()
-  const { theme } = useTheme()
+  const { theme, mode, model, setMode } = usePreferences()
   const { path, navigate } = useRouter()
   const { push } = useToast()
   const [composer, setComposer] = useState("")
   const composerRef = useRef("")
   const [filter, setFilter] = useState("")
   const [menuOpen, setMenuOpen] = useState(false)
-  const [mode] = useState(DEFAULT_PREFERENCES.mode)
   const chat = useChatSession(chatTransport)
+
+  const toggleMode = () => setMode(mode === "plan" ? "build" : "plan")
 
   useRootKeys((token) => {
     if (token === "ctrl+c") (onExit ?? exitCleanly)(renderer)
+    if (token === "tab") {
+      toggleMode()
+      return
+    }
     if (token !== "escape") return
     // The unhandled fallback rather than a responder layer: a layer registered while a turn streams
     // sits above the command palette's, so Escape would kill the turn instead of closing the menu.
@@ -101,7 +105,7 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
 
   return (
     <box flexDirection="column" width="100%" height="100%">
-      <Header theme={theme} cwd={cwd()} mode={mode} model={DEFAULT_PREFERENCES.model} status={headerStatus(chat)} width={renderer.width} />
+      <Header theme={theme} cwd={cwd()} mode={mode} model={model} status={headerStatus(chat)} width={renderer.width} />
       <box flexGrow={1}>
         <RouteView home={<HomeView theme={theme} />} session={<SessionView theme={theme} messages={chat.messages} />} />
       </box>
