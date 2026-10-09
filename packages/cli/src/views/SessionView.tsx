@@ -1,44 +1,23 @@
+import { MessageList } from "../components/chat/MessageList.js"
+import type { ChatMessage } from "../core/chat/types.js"
 import type { Theme } from "../styles/theme.js"
-
-export interface SessionTurn {
-  id: number
-  prompt: string
-}
-
-let nextTurnId = 1
-
-export function sessionTurn(prompt: string): SessionTurn {
-  const id = nextTurnId
-  nextTurnId += 1
-  return { id, prompt }
-}
-
-export function resetSessionTurnIds(): void {
-  nextTurnId = 1
-}
 
 export interface SessionViewProps {
   theme: Theme
-  turns: readonly SessionTurn[]
+  messages: readonly ChatMessage[]
 }
 
 /**
- * The active session. The streaming response relay lands in a later phase, so the assistant block
- * stays empty rather than showing a spinner that implies work is happening.
+ * The active session, and nothing else.
+ *
+ * It takes literals as props and holds no transport, no session, and no keys, which is what keeps its
+ * test a render test. `focused` stays `false` on the scroll box because a focused one would put itself
+ * on the responder stack and eat the arrow keys the composer needs.
  */
-export function SessionView({ theme, turns }: SessionViewProps) {
+export function SessionView({ theme, messages }: SessionViewProps) {
   return (
-    <box flexDirection="column" width="100%" height="100%" paddingX={1}>
-      {turns.map((turn) => (
-        <box key={turn.id} flexDirection="column" marginBottom={1}>
-          <text fg={theme.accent}>you</text>
-          <text fg={theme.fg}>{`> ${turn.prompt}`}</text>
-        </box>
-      ))}
-      <box flexDirection="column">
-        <text fg={theme.accentAlt}>nightcode</text>
-        <text fg={theme.dim}>no response yet</text>
-      </box>
-    </box>
+    <scrollbox stickyScroll stickyStart="bottom" focused={false} flexGrow={1} width="100%">
+      <MessageList theme={theme} messages={messages} />
+    </scrollbox>
   )
 }
