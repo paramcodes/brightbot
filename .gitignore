@@ -10,3 +10,4 @@ dist/
 .env.*
 !.env.example
 *.tsbuildinfo
+packages/server/generated

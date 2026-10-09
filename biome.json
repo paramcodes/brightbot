@@ -18,7 +18,9 @@
       "!orchestrate",
       "!**/*.cast",
       "!**/*.gif",
-      "!**/*.png"
+      "!**/*.png",
+      "!**/generated",
+      "!packages/server/generated"
     ]
   },
   "formatter": {
