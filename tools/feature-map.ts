@@ -47,7 +47,7 @@ const options = parseArgs({
 }).values
 
 if (options.phase && options.status) {
-  status[options.phase] = options.status as keyof typeof STATUS_LABEL
+  status[`Phase ${Number(options.phase)}`] = options.status as keyof typeof STATUS_LABEL
   writeFileSync(STATUS_PATH, `${JSON.stringify(status, null, 2)}\n`)
 }
 
