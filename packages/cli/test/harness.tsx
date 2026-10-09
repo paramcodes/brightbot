@@ -42,6 +42,28 @@ export async function settle(setup: TuiHarness): Promise<void> {
   await setup.waitForVisualIdle({ maxFrames: 10 })
 }
 
+/**
+ * Settles repeatedly until `predicate` holds, or throws once the budget is spent.
+ *
+ * `settle()`'s `waitForVisualIdle` returns while a `<markdown>` renderable is still building its block
+ * tree, so a frame captured straight after a render can be blank for a finalized body. Polling is the
+ * only way to wait for the renderable rather than for React.
+ *
+ * The timeout error carries the last frame it saw, because a failure here is always "the text was not
+ * on screen" and the frame is the only record of what was.
+ */
+export async function untilSettled(setup: TuiHarness, predicate: () => boolean, budgetMs = 2000): Promise<void> {
+  const deadline = Date.now() + budgetMs
+  let last = ""
+  while (Date.now() < deadline) {
+    await settle(setup)
+    last = frame(setup)
+    if (predicate()) return
+    await tick()
+  }
+  throw new Error(`untilSettled timed out after ${budgetMs}ms. Last frame:\n${last}`)
+}
+
 function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
