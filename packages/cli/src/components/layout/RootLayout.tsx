@@ -3,12 +3,14 @@ import type { CliRenderer } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useRef, useState } from "react"
 import { useTheme } from "../../context/ThemeContext.js"
+import type { ChatTransport } from "../../core/chat/transport.js"
 import { exitCleanly } from "../../core/renderer.js"
 import { useRootKeys } from "../../core/responder/useResponder.js"
+import { type ChatSession, useChatSession } from "../../hooks/useChatSession.js"
 import { DEFAULT_PREFERENCES } from "../../lib/config.js"
 import { ROUTES, RouteView, useRouter } from "../../router/routes.js"
 import { HomeView } from "../../views/HomeView.js"
-import { type SessionTurn, SessionView, sessionTurn } from "../../views/SessionView.js"
+import { SessionView } from "../../views/SessionView.js"
 import { CommandMenu } from "../command-menu/CommandMenu.js"
 import type { Command } from "../command-menu/commands.js"
 import { InputBar } from "../input/InputBar.js"
@@ -17,10 +19,17 @@ import { Header } from "./Header.js"
 
 export interface RootLayoutProps {
   onExit?: (renderer: CliRenderer) => void
+  chatTransport: ChatTransport
+}
+
+/** The one word the header shows for the whole conversation. Pure, so a test reads it without a terminal. */
+export function headerStatus(chat: Pick<ChatSession, "generating" | "messages">): string {
+  if (chat.generating) return "streaming"
+  return chat.messages.length > 0 ? "sent" : "idle"
 }
 
 /** Header, the routed body, the composer, the hint row, and the `/` palette. */
-export function RootLayout({ onExit }: RootLayoutProps) {
+export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const renderer = useRenderer()
   const { theme } = useTheme()
   const { path, navigate } = useRouter()
@@ -29,12 +38,19 @@ export function RootLayout({ onExit }: RootLayoutProps) {
   const composerRef = useRef("")
   const [filter, setFilter] = useState("")
   const [menuOpen, setMenuOpen] = useState(false)
-  const [turns, setTurns] = useState<readonly SessionTurn[]>([])
   const [mode] = useState(DEFAULT_PREFERENCES.mode)
+  const chat = useChatSession(chatTransport)
 
   useRootKeys((token) => {
     if (token === "ctrl+c") (onExit ?? exitCleanly)(renderer)
-    if (token === "escape") push({ kind: "info", message: "No generation to interrupt" })
+    if (token !== "escape") return
+    // The unhandled fallback rather than a responder layer: a layer registered while a turn streams
+    // sits above the command palette's, so Escape would kill the turn instead of closing the menu.
+    if (chat.generating) {
+      chat.abort()
+      return
+    }
+    push({ kind: "info", message: "No generation to interrupt" })
   })
 
   const changeComposer = (value: string) => {
@@ -57,7 +73,11 @@ export function RootLayout({ onExit }: RootLayoutProps) {
   }
 
   const submit = (prompt: string) => {
-    setTurns((current) => [...current, sessionTurn(prompt)])
+    const outcome = chat.submit(prompt)
+    if (!outcome.accepted) {
+      push({ kind: "warning", message: outcome.reason })
+      return
+    }
     composerRef.current = ""
     setComposer("")
     if (path === ROUTES.home) navigate(ROUTES.session)
@@ -66,7 +86,7 @@ export function RootLayout({ onExit }: RootLayoutProps) {
   const runCommand = (command: Command) => {
     closeMenu()
     if (command.id === "clear") {
-      setTurns([])
+      chat.reset()
       composerRef.current = ""
       setComposer("")
       if (path === ROUTES.session) navigate(ROUTES.home)
@@ -81,16 +101,9 @@ export function RootLayout({ onExit }: RootLayoutProps) {
 
   return (
     <box flexDirection="column" width="100%" height="100%">
-      <Header
-        theme={theme}
-        cwd={cwd()}
-        mode={mode}
-        model={DEFAULT_PREFERENCES.model}
-        status={turns.length > 0 ? "sent" : "idle"}
-        width={renderer.width}
-      />
+      <Header theme={theme} cwd={cwd()} mode={mode} model={DEFAULT_PREFERENCES.model} status={headerStatus(chat)} width={renderer.width} />
       <box flexGrow={1}>
-        <RouteView home={<HomeView theme={theme} />} session={<SessionView theme={theme} turns={turns} />} />
+        <RouteView home={<HomeView theme={theme} />} session={<SessionView theme={theme} messages={chat.messages} />} />
       </box>
       {/*
         The slash that opens the palette is consumed, so the composer must be emptied with it. React

@@ -1,6 +1,6 @@
-import type { NewSession, Session, Store } from "@nightcode/shared"
+import type { Message, NewMessage, NewSession, Session, Store } from "@nightcode/shared"
 import { createPrismaClient } from "../lib/db.js"
-import { LOCAL_USER_EMAIL, LOCAL_USER_ID, type PrismaDatabase, type SessionRow } from "./types.js"
+import { LOCAL_USER_EMAIL, LOCAL_USER_ID, type MessageRow, type PrismaDatabase, type SessionRow } from "./types.js"
 
 /**
  * The same port, backed by Postgres. Constructed only when `DATABASE_URL` is present, so nothing
@@ -29,6 +29,19 @@ export class PrismaStore implements Store {
     const row = await this.db.session.findUnique({ where: { id } })
     return row === null ? null : toSession(row)
   }
+
+  async appendMessage(input: NewMessage): Promise<Message> {
+    const row = await this.db.message.create({
+      data: {
+        id: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        status: input.status,
+      },
+    })
+    return toMessage(row)
+  }
 }
 
 export async function prismaStore(): Promise<Store> {
@@ -43,5 +56,16 @@ function toSession(row: SessionRow): Session {
     model: row.model,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+function toMessage(row: MessageRow): Message {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    role: row.role,
+    content: row.content,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
   }
 }

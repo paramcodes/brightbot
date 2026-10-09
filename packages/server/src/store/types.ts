@@ -1,4 +1,4 @@
-import type { Message, Session, TokenUsage, User } from "@nightcode/shared"
+import type { Message, MessageStatus, Role, Session, TokenUsage, User } from "@nightcode/shared"
 
 /** Which implementation `createStore` picked, decided purely from the environment. */
 export type StoreKind = "file" | "prisma"
@@ -37,6 +37,15 @@ export interface UserRow {
   updatedAt: Date
 }
 
+export interface MessageRow {
+  id: string
+  sessionId: string
+  role: Role
+  content: string
+  status: MessageStatus
+  createdAt: Date
+}
+
 /**
  * The slice of the generated Prisma client this package calls.
  *
@@ -52,6 +61,9 @@ export interface PrismaDatabase {
   session: {
     create(input: { data: { id: string; userId: string; title: string; model: string } }): Promise<SessionRow>
     findUnique(input: { where: { id: string } }): Promise<SessionRow | null>
+  }
+  message: {
+    create(input: { data: { id: string; sessionId: string; role: Role; content: string; status: MessageStatus } }): Promise<MessageRow>
   }
 }
 

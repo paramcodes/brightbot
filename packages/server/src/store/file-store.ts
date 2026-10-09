@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { NewSession, Session, Store } from "@nightcode/shared"
-import { STORE_PATH } from "@nightcode/shared"
+import type { Message, NewMessage, NewSession, Session, Store } from "@nightcode/shared"
+import { MESSAGE_STATUSES, ROLES, STORE_PATH } from "@nightcode/shared"
 import { z } from "zod"
 import { EMPTY_DOCUMENT, LOCAL_USER_EMAIL, LOCAL_USER_ID, type StoreDocument } from "./types.js"
 
@@ -27,8 +27,9 @@ const sessionSchema = z.object({
 const messageSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
-  role: z.enum(["user", "assistant", "system"]),
+  role: z.enum(ROLES),
   content: z.string(),
+  status: z.enum(MESSAGE_STATUSES).default("complete"),
   createdAt: timestamp,
 })
 
@@ -57,31 +58,66 @@ const documentSchema = z.object({
  * cache invalidation rule.
  */
 export class FileStore implements Store {
+  private tail: Promise<unknown> = Promise.resolve()
+
   constructor(private readonly path?: string) {}
 
   private get storePath(): string {
     return this.path ?? STORE_PATH()
   }
 
+  /**
+   * One read-modify-write at a time. Two overlapping turns otherwise read the same snapshot and the
+   * second `renameSync` clobbers the first, losing a row. The next link runs even when the previous
+   * one failed, so a single bad write does not stall every request behind it.
+   */
+  private serialize<T>(operation: () => T): Promise<T> {
+    const run = this.tail.then(operation)
+    this.tail = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
   async createSession(input: NewSession): Promise<Session> {
-    const document = this.read()
-    const now = new Date().toISOString()
-    this.ensureLocalUser(document, now)
-    const session: Session = {
-      id: randomUUID(),
-      userId: LOCAL_USER_ID,
-      title: input.title,
-      model: input.model,
-      createdAt: now,
-      updatedAt: now,
-    }
-    document.sessions.push(session)
-    this.write(document)
-    return session
+    return this.serialize(() => {
+      const document = this.read()
+      const now = new Date().toISOString()
+      this.ensureLocalUser(document, now)
+      const session: Session = {
+        id: randomUUID(),
+        userId: LOCAL_USER_ID,
+        title: input.title,
+        model: input.model,
+        createdAt: now,
+        updatedAt: now,
+      }
+      document.sessions.push(session)
+      this.write(document)
+      return session
+    })
   }
 
   async getSession(id: string): Promise<Session | null> {
     return this.read().sessions.find((session) => session.id === id) ?? null
+  }
+
+  async appendMessage(input: NewMessage): Promise<Message> {
+    return this.serialize(() => {
+      const document = this.read()
+      const message: Message = {
+        id: randomUUID(),
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        status: input.status,
+        createdAt: new Date().toISOString(),
+      }
+      document.messages.push(message)
+      this.write(document)
+      return message
+    })
   }
 
   private ensureLocalUser(document: StoreDocument, now: string): void {
