@@ -21,7 +21,14 @@ jobs:
         run: bunx biome check .
       - name: Unit and TUI tests
         run: bun test packages
-      - name: CLI smoke test in a real terminal
+      - name: CLI smoke test on a non-tty stdout
         run: |
-          bun run --cwd packages/cli src/index.tsx --help > /tmp/help.txt 2>&1 || true
-          head -c 200 /tmp/help.txt
+          set +e
+          bun run --cwd packages/cli src/index.tsx < /dev/null > /tmp/smoke.out 2> /tmp/smoke.err
+          code=$?
+          set -e
+          echo "exit=$code"
+          cat /tmp/smoke.err
+          test "$code" -eq 1
+          test ! -s /tmp/smoke.out
+          grep -q "needs an interactive terminal" /tmp/smoke.err
