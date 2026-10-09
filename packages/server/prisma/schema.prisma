@@ -1,0 +1,62 @@
+// Night Code persists chat histories, context windows, and credit usage.
+//
+// Prisma 7 keeps the datasource to the provider only. The connection string lives in the
+// PrismaClient constructor (see src/lib/db.ts), so `prisma generate` runs offline with no
+// DATABASE_URL, which is what lets a cold clone build the client before any secret exists.
+datasource db {
+  provider = "postgresql"
+}
+
+// `prisma-client` emits plain TypeScript instead of a compiled bundle, and Prisma 7 makes `output`
+// mandatory. The path is relative to this file, so the client lands in packages/server/generated.
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated"
+  runtime      = "bun"
+  moduleFormat = "esm"
+}
+
+enum Role {
+  user
+  assistant
+  system
+}
+
+model User {
+  id        String    @id
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sessions  Session[]
+}
+
+model Session {
+  id        String    @id
+  userId    String
+  title     String
+  model     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id])
+  messages  Message[]
+  usage     TokenUsage[]
+}
+
+model Message {
+  id        String   @id
+  sessionId String
+  role      Role
+  content   String
+  createdAt DateTime @default(now())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model TokenUsage {
+  id               String   @id
+  sessionId        String
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  createdAt        DateTime @default(now())
+  session          Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}

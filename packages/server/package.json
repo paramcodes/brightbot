@@ -1,0 +1,29 @@
+{
+  "name": "@nightcode/server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Night Code HTTP backend: Hono routes, the persistence port, and observability.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./app": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "nightcode-server": "bun run src/index.ts",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "@nightcode/shared": "workspace:*",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "@sentry/core": "^11.6.0",
+    "hono": "^4.13.13",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.1",
+    "prisma": "^7.10.0",
+    "typescript": "^5.9.3"
+  }
+}
