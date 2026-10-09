@@ -1,14 +1,17 @@
 import { cwd } from "node:process"
 import type { Session } from "@nightcode/shared"
-import type { CliRenderer } from "@opentui/core"
+import type { CliRenderer, InputRenderable, KeyEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { usePreferences } from "../../context/PreferencesContext.js"
 import type { ChatTransport } from "../../core/chat/transport.js"
+import { keyToken } from "../../core/keys.js"
+import { activeMention, MENTION_LIMIT, type MentionSpan, rankMatches, replaceMention } from "../../core/mention.js"
 import { exitCleanly } from "../../core/renderer.js"
 import { useRootKeys } from "../../core/responder/useResponder.js"
 import { type ChatSession, useChatSession } from "../../hooks/useChatSession.js"
 import { useSessionHistory } from "../../hooks/useSessionHistory.js"
+import { scanFiles } from "../../lib/file-scanner.js"
 import { ROUTES, RouteView, useRouter } from "../../router/routes.js"
 import { HomeView } from "../../views/HomeView.js"
 import { SessionView } from "../../views/SessionView.js"
@@ -16,6 +19,7 @@ import { CommandMenu } from "../command-menu/CommandMenu.js"
 import type { Command } from "../command-menu/commands.js"
 import { ModelSelectDialog } from "../dialogs/ModelSelectDialog.js"
 import { SessionListDialog } from "../dialogs/SessionListDialog.js"
+import { FileMentionMenu } from "../input/FileMentionMenu.js"
 import { InputBar } from "../input/InputBar.js"
 import { useToast } from "../toast/useToast.js"
 import { Header } from "./Header.js"
@@ -45,13 +49,71 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const [modelsOpen, setModelsOpen] = useState(false)
   const [sessionFilter, setSessionFilter] = useState("")
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [mentionFiles, setMentionFiles] = useState<readonly string[]>([])
+  const [mentionSelected, setMentionSelected] = useState(0)
+  const [dismissedMention, setDismissedMention] = useState<MentionSpan | null>(null)
+  const [caret, setCaret] = useState(0)
+  const inputRef = useRef<InputRenderable | null>(null)
+  const pendingCaret = useRef<number | null>(null)
   const chat = useChatSession(chatTransport)
   const history = useSessionHistory(chatTransport)
+
+  const rescanMentionFiles = useCallback(() => {
+    void scanFiles(cwd())
+      .then(setMentionFiles)
+      .catch(() => {
+        // A failed scan is the picker's own failure mode, so it lands here rather than at the boundary
+        // of the feature: the composer has to stay usable no matter what the tree does.
+        setMentionFiles([])
+      })
+  }, [])
+
+  useEffect(() => {
+    rescanMentionFiles()
+  }, [rescanMentionFiles])
+
+  const mention = activeMention(composer, caret)
+  // A dismissal is keyed to the span it dismissed, so typing reopens the picker while an unchanged
+  // span stays closed. That is what keeps `escape` from being a key the user has to press twice.
+  const mentionOpen =
+    mention !== null && (dismissedMention === null || dismissedMention.start !== mention.start || dismissedMention.query !== mention.query)
+  const mentionMatches = mention ? rankMatches(mentionFiles, mention.query, MENTION_LIMIT) : []
+  const mentionCursor = Math.min(mentionSelected, Math.max(mentionMatches.length - 1, 0))
+
+  // Re-scanned when the picker opens, because a turn or an editor may have written the file the user
+  // is about to mention since the CLI started.
+  useEffect(() => {
+    if (mentionOpen) rescanMentionFiles()
+  }, [mentionOpen, rescanMentionFiles])
+
+  // React pushes the composer's `value` prop after this commit and that setter moves the caret to
+  // the end of the new text, so an accepted mention's caret is restored here, after the push.
+  useLayoutEffect(() => {
+    const target = pendingCaret.current
+    if (target === null) return
+    pendingCaret.current = null
+    const input = inputRef.current
+    if (input) input.cursorOffset = target
+  })
+
+  const acceptMention = (span: MentionSpan, path: string) => {
+    const replaced = replaceMention(composerRef.current, span, path)
+    composerRef.current = replaced.value
+    setComposer(replaced.value)
+    setDismissedMention(null)
+    setMentionSelected(0)
+    pendingCaret.current = replaced.caret
+    setCaret(replaced.caret)
+  }
 
   const toggleMode = () => setMode(mode === "plan" ? "build" : "plan")
 
   useRootKeys((token) => {
     if (token === "ctrl+c") (onExit ?? exitCleanly)(renderer)
+    // While a mention is live the picker owns `escape` and `tab`, and this global listener runs before
+    // the composer's own key handler, so a `preventDefault` there cannot stop this one from firing
+    // too: the mode would flip on every accepted file.
+    if (mentionOpen && (token === "escape" || token === "tab")) return
     if (token === "tab") {
       toggleMode()
       return
@@ -93,6 +155,44 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const closeSessionPicker = () => {
     setSessionsOpen(false)
     setSessionFilter("")
+  }
+
+  /**
+   * The picker's keyboard, taken on the composer's own `onKeyDown`.
+   *
+   * This is the point the `@` mechanism turns on. A responder layer is useless here: it returns
+   * `true` and the focused input still acts on the key anyway, which is a measured fact and the
+   * reason the picker is not a modal. `onKeyDown` on the renderable runs before the buffer edits, so
+   * a `preventDefault` on it really does stop the composer acting on the key.
+   */
+  const handleComposerKeyDown = (event: KeyEvent) => {
+    const span = activeMention(composerRef.current, caret)
+    if (!span) return
+    const token = keyToken(event)
+    if (token === "up" || token === "down") {
+      // Always taken, so the caret cannot move out from under the picker while it is open.
+      event.preventDefault()
+      if (mentionMatches.length === 0) return
+      const step = token === "down" ? 1 : -1
+      setMentionSelected((index) => Math.min(Math.max(index + step, 0), mentionMatches.length - 1))
+      return
+    }
+    if (token === "escape") {
+      event.preventDefault()
+      setDismissedMention(span)
+      return
+    }
+    if (token !== "return" && token !== "tab") return
+    const path = mentionMatches[mentionCursor]
+    // With no row to accept the composer keeps its own submit binding, so the prompt still sends.
+    if (!path) return
+    event.preventDefault()
+    acceptMention(span, path)
+  }
+
+  const handleComposerCursor = (visualColumn: number) => {
+    setCaret(visualColumn)
+    setDismissedMention(null)
   }
 
   const resumeSession = async (session: Session): Promise<void> => {
@@ -175,7 +275,28 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
         focused={!modalOpen}
         onChange={changeComposer}
         onSubmit={submit}
+        onKeyDown={handleComposerKeyDown}
+        onCursorChange={handleComposerCursor}
+        inputRef={inputRef}
       />
+      {/*
+        A sibling of the composer, not a child: it paints outside the composer's box, which needs the
+        default `overflow: visible`. Unlike the palette, opening it changes no `key`, so the composer
+        keeps focus and keeps every printable key.
+      */}
+      {mentionOpen && mention ? (
+        <FileMentionMenu
+          theme={theme}
+          paths={mentionMatches}
+          query={mention.query}
+          selectedIndex={mentionCursor}
+          anchor={{
+            x: inputRef.current?.screenX ?? 0,
+            y: inputRef.current?.screenY ?? 0,
+            column: inputRef.current?.visualCursor.visualCol ?? 0,
+          }}
+        />
+      ) : null}
       <box height={1} paddingX={1}>
         <text fg={theme.dim}>tab switch mode · / commands · @ mention a file · esc interrupt · ctrl+c quit</text>
       </box>
