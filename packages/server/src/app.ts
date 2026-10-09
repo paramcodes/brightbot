@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { cors } from "hono/cors"
+import { reportError } from "./lib/sentry.js"
 import { apiNotFound, onApiError } from "./middleware/error-handler.js"
 import { health } from "./routes/health.js"
 import { sessions } from "./routes/sessions.js"
@@ -13,7 +14,7 @@ export const app = new Hono()
   .route("/health", health)
   .route("/api/sessions", sessions)
   .notFound(apiNotFound)
-  .onError(onApiError(() => {}))
+  .onError(onApiError(reportError))
 
 /** Hand this to `hc<AppType>` and the client's URLs and payloads are checked at compile time. */
 export type AppType = typeof app

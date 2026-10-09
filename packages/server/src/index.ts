@@ -1,4 +1,7 @@
 import { app } from "./app.js"
+import { initSentry } from "./lib/sentry.js"
+
+initSentry()
 
 /**
  * Bun reads this default export as the server. No credential, database, or network is needed to boot,
