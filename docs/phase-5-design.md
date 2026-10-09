@@ -115,11 +115,24 @@ new text and the caret would otherwise jump.
 
 ## What this phase deliberately does not do
 
-- No persisted reasoning, for the schema reason above.
+- No persisted reasoning. The store's document schema strips unknown keys and rewrites the file without
+  them, so a new field on `Message` needs a `version: 2` variant and a migration read rather than an
+  optional field. Phase 5 could have slipped reasoning in beside a dialog; it did not.
 - No `session.update`, so `updatedAt` stays write-once and "recent" means newest created.
 - No pagination on either listing. The first session with a thousand turns is a Phase 6 problem.
 - No server-side file scan. The picker reads the working directory the CLI is running in.
 - No new status bar, and no second search implementation for the mention picker.
+
+## What this phase left behind
+
+- `systemPrompt` is exported and unreferenced. `ChatRequest` has no system field, so the mode still
+  changes nothing the model is told. That seam is the first thing Phase 6 should close.
+- The server resolves a provider from the model id through the shared catalog, but a picked provider
+  with no key fails at request time rather than falling back, matching the existing
+  `NIGHTCODE_MODEL_PROVIDER` behaviour.
+- The file scan is synchronous inside an async function, bounded by the skip list rather than by an
+  await. A huge non-ignored directory is the case to measure.
+- `MODEL_IDS` has no consumer.
 
 ## Verification
 
