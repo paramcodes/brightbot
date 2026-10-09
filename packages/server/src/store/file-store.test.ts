@@ -103,6 +103,82 @@ describe("file store", () => {
     expect(document.messages).toEqual([message])
   })
 
+  test("listSessions on a store that holds nothing lists empty", async () => {
+    expect(await new FileStore().listSessions()).toEqual([])
+  })
+
+  test("listSessions is newest first, which is the file's own order reversed", async () => {
+    const store = new FileStore()
+    const one = await store.createSession({ title: "Written first", model: "m" })
+    const two = await store.createSession({ title: "Written second", model: "m" })
+    const three = await store.createSession({ title: "Written third", model: "m" })
+
+    expect(await store.listSessions()).toEqual([three, two, one])
+  })
+
+  test("listSessions is newest first even when every timestamp is the same value", async () => {
+    // `createdAt` is a millisecond ISO string, so two overlapping calls can share one value and a sort on
+    // it would swap two rows written in a known order. The file is written here rather than created, so
+    // the collision is a fact of the fixture instead of a timing accident of this run.
+    const written = [
+      {
+        id: "a",
+        userId: "local",
+        title: "Written first",
+        model: "m",
+        createdAt: "2026-10-10T00:00:00.000Z",
+        updatedAt: "2026-10-10T00:00:00.000Z",
+      },
+      {
+        id: "b",
+        userId: "local",
+        title: "Written second",
+        model: "m",
+        createdAt: "2026-10-10T00:00:00.000Z",
+        updatedAt: "2026-10-10T00:00:00.000Z",
+      },
+    ]
+    writeFileSync(
+      join(home, "store.json"),
+      `${JSON.stringify({ version: 1, users: [], sessions: written, messages: [], tokenUsage: [] })}\n`,
+    )
+
+    expect((await new FileStore().listSessions()).map((session) => session.title)).toEqual(["Written second", "Written first"])
+  })
+
+  test("a read is not queued behind a write still in the chain", async () => {
+    const store = new FileStore()
+    const first = await store.createSession({ title: "First", model: "m" })
+
+    // `createSession` defers its own read-modify-write to a microtask, and an async function body runs
+    // synchronously to its first await, so this read strictly precedes that write. A `listSessions` that
+    // took `serialize` would queue behind it and see the second session.
+    const writing = store.createSession({ title: "Second", model: "m" })
+    const listed = await store.listSessions()
+    await writing
+
+    expect(listed).toEqual([first])
+    expect(await store.listSessions()).toEqual([await writing, first])
+  })
+
+  test("listMessages returns one session's transcript in arrival order", async () => {
+    const store = new FileStore()
+    const asked = await store.createSession({ title: "Asked", model: "m" })
+    const other = await store.createSession({ title: "Other", model: "m" })
+    const first = await store.appendMessage({ sessionId: asked.id, role: "user", content: "first", status: "complete" })
+    await store.appendMessage({ sessionId: other.id, role: "user", content: "never leaked", status: "complete" })
+    const second = await store.appendMessage({
+      sessionId: asked.id,
+      role: "assistant",
+      content: "second",
+      status: "interrupted",
+    })
+
+    expect(await store.listMessages(asked.id)).toEqual([first, second])
+    expect(await store.listMessages(other.id)).toHaveLength(1)
+    expect(await store.listMessages("never asked about")).toEqual([])
+  })
+
   test("two overlapping appends both land", async () => {
     const store = new FileStore()
     const session = await store.createSession({ title: "Chat", model: "m" })

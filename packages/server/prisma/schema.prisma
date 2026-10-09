@@ -50,6 +50,8 @@ model Message {
   status    String   @default("complete")
   createdAt DateTime @default(now())
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
 }
 
 model TokenUsage {

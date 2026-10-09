@@ -1,4 +1,5 @@
 import { cwd } from "node:process"
+import type { Session } from "@nightcode/shared"
 import type { CliRenderer } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useRef, useState } from "react"
@@ -7,12 +8,14 @@ import type { ChatTransport } from "../../core/chat/transport.js"
 import { exitCleanly } from "../../core/renderer.js"
 import { useRootKeys } from "../../core/responder/useResponder.js"
 import { type ChatSession, useChatSession } from "../../hooks/useChatSession.js"
+import { useSessionHistory } from "../../hooks/useSessionHistory.js"
 import { ROUTES, RouteView, useRouter } from "../../router/routes.js"
 import { HomeView } from "../../views/HomeView.js"
 import { SessionView } from "../../views/SessionView.js"
 import { CommandMenu } from "../command-menu/CommandMenu.js"
 import type { Command } from "../command-menu/commands.js"
 import { ModelSelectDialog } from "../dialogs/ModelSelectDialog.js"
+import { SessionListDialog } from "../dialogs/SessionListDialog.js"
 import { InputBar } from "../input/InputBar.js"
 import { useToast } from "../toast/useToast.js"
 import { Header } from "./Header.js"
@@ -40,7 +43,10 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [modelFilter, setModelFilter] = useState("")
   const [modelsOpen, setModelsOpen] = useState(false)
+  const [sessionFilter, setSessionFilter] = useState("")
+  const [sessionsOpen, setSessionsOpen] = useState(false)
   const chat = useChatSession(chatTransport)
+  const history = useSessionHistory(chatTransport)
 
   const toggleMode = () => setMode(mode === "plan" ? "build" : "plan")
 
@@ -84,10 +90,25 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     setModelFilter("")
   }
 
+  const closeSessionPicker = () => {
+    setSessionsOpen(false)
+    setSessionFilter("")
+  }
+
+  const resumeSession = async (session: Session): Promise<void> => {
+    closeSessionPicker()
+    try {
+      chat.resume(session, await chatTransport.listMessages(session.id))
+      navigate(ROUTES.session)
+    } catch {
+      push({ kind: "error", message: "The transcript could not be read" })
+    }
+  }
+
   // Both modals take the printable keys the composer would otherwise eat, so both unfocus it. The
   // keyed remount is what the palette always needed: the slash that opened it was consumed, so the
   // composer's value never changes and React would leave the text in place.
-  const modalOpen = menuOpen || modelsOpen
+  const modalOpen = menuOpen || modelsOpen || sessionsOpen
 
   const submit = (prompt: string) => {
     // The model the user picked has to reach the turn, or the picker changes a label and nothing
@@ -117,6 +138,13 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     }
     if (command.id === "models") {
       setModelsOpen(true)
+      return
+    }
+    if (command.id === "sessions") {
+      // Re-read on open rather than trusting the mount-time list: a session created since the CLI
+      // started is exactly the one the user is here to restore.
+      history.reload()
+      setSessionsOpen(true)
       return
     }
     if (command.id === "agents") {
@@ -162,6 +190,18 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
             closeModelPicker()
           }}
           onClose={closeModelPicker}
+        />
+      ) : null}
+      {sessionsOpen ? (
+        <SessionListDialog
+          theme={theme}
+          filter={sessionFilter}
+          onFilter={setSessionFilter}
+          sessions={history.sessions}
+          loading={history.loading}
+          error={history.error}
+          onSelect={(session) => void resumeSession(session)}
+          onClose={closeSessionPicker}
         />
       ) : null}
     </box>

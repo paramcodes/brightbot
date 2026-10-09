@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { ChatRequest } from "@nightcode/shared"
+import type { ChatRequest, Message, Session } from "@nightcode/shared"
 import { useRef, useState } from "react"
 import type { ChatTransport } from "../core/chat/transport.js"
 import type { ChatMessage, ChatMessageStatus } from "../core/chat/types.js"
@@ -19,6 +19,8 @@ export interface ChatSession {
   readonly submit: (prompt: string, model: string) => SubmitOutcome
   readonly abort: () => void
   readonly reset: () => void
+  /** Puts a saved transcript and its session on screen, dropping whatever the view held before. */
+  readonly resume: (session: Session, rows: readonly Message[]) => void
 }
 
 /**
@@ -35,6 +37,21 @@ export function transcript(messages: readonly ChatMessage[]): ChatRequest["messa
 /** What the session is named after. Pure, so the cap and the fallback are readable in one place. */
 export function sessionTitle(prompt: string): string {
   return prompt.trim().slice(0, TITLE_LIMIT) || EMPTY_TITLE
+}
+
+/**
+ * A stored transcript as the view renders it.
+ *
+ * A `system` row is dropped rather than translated, because `ChatRole` is `user | assistant` and a
+ * system turn has no representation in that vocabulary; putting it on screen would need a third role
+ * nothing renders. Reasoning and error start empty and null because the shared `Message` has no field
+ * for either. `status` needs no translation at all: `complete` and `interrupted` are already the same
+ * two values on both sides of the port.
+ */
+export function toChatMessages(rows: readonly Message[]): ChatMessage[] {
+  return rows.flatMap((row) =>
+    row.role === "system" ? [] : [{ id: row.id, role: row.role, content: row.content, reasoning: "", status: row.status, error: null }],
+  )
 }
 
 /**
@@ -110,7 +127,17 @@ export function useChatSession(transport: ChatTransport): ChatSession {
     setSessionId(null)
   }
 
-  return { messages, sessionId, generating: stream.active, submit, abort: stream.abort, reset }
+  const resume = (session: Session, rows: readonly Message[]): void => {
+    // `reset`'s shape exactly. The abort stops a turn that is mid-answer, and the generation bump is
+    // what keeps a run still unwinding from the previous conversation from writing its session id back
+    // over the one just resumed.
+    stream.abort()
+    generation.current += 1
+    setMessages(toChatMessages(rows))
+    setSessionId(session.id)
+  }
+
+  return { messages, sessionId, generating: stream.active, submit, abort: stream.abort, reset, resume }
 }
 
 /** The single write that ends a turn, guarded so a second call cannot move a message that already landed. */

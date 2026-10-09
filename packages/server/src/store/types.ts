@@ -61,9 +61,12 @@ export interface PrismaDatabase {
   session: {
     create(input: { data: { id: string; userId: string; title: string; model: string } }): Promise<SessionRow>
     findUnique(input: { where: { id: string } }): Promise<SessionRow | null>
+    /** The input is optional so a caller that wants the whole table still satisfies the type. */
+    findMany(input?: { orderBy?: { createdAt: "asc" | "desc" } }): Promise<SessionRow[]>
   }
   message: {
     create(input: { data: { id: string; sessionId: string; role: Role; content: string; status: MessageStatus } }): Promise<MessageRow>
+    findMany(input: { where: { sessionId: string }; orderBy?: { createdAt: "asc" | "desc" } }): Promise<MessageRow[]>
   }
 }
 

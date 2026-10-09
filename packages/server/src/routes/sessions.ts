@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator"
-import type { Session } from "@nightcode/shared"
+import type { Message, Session } from "@nightcode/shared"
 import { Hono } from "hono"
 import { z } from "zod"
 import { ApiError, errorResponse } from "../middleware/error-handler.js"
@@ -26,6 +26,10 @@ export const sessions = new Hono()
       return c.json<Session>(await store.createSession(input), 201)
     },
   )
+  .get("/", async (c) => {
+    const store = await createStore()
+    return c.json<Session[]>(await store.listSessions())
+  })
   .get("/:id", async (c) => {
     const id = c.req.param("id")
     const store = await createStore()
@@ -34,4 +38,16 @@ export const sessions = new Hono()
       throw new ApiError(404, `No session with id ${id}`)
     }
     return c.json<Session>(session)
+  })
+  .get("/:id/messages", async (c) => {
+    const id = c.req.param("id")
+    const store = await createStore()
+    const session = await store.getSession(id)
+    // A 404 rather than an empty array, which is the answer `GET /:id` already gives: a caller that
+    // asked for a session that is not there has made a mistake, and an empty transcript would read as
+    // a session that had simply never been spoken in.
+    if (!session) {
+      throw new ApiError(404, `No session with id ${id}`)
+    }
+    return c.json<Message[]>(await store.listMessages(id))
   })

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import type { Message, Session } from "@nightcode/shared"
 import { frame, renderTui, settle, untilSettled } from "../../test/harness.js"
 import { ANSWER_FRAMES, scriptedTransport } from "../../test/scripted-transport.js"
 import type { ChatTransport } from "../core/chat/transport.js"
 import type { ChatMessage } from "../core/chat/types.js"
 import type { ChatSession } from "./useChatSession.js"
-import { sessionTitle, transcript, useChatSession } from "./useChatSession.js"
+import { sessionTitle, toChatMessages, transcript, useChatSession } from "./useChatSession.js"
 
 /** The probe is how a hook is called the way a component calls it: through a render, not directly. */
 let chat: ChatSession | null = null
@@ -225,6 +226,132 @@ describe("useChatSession", () => {
     expect(current().sessionId).toBeNull()
     expect(current().messages).toEqual([])
     expect(frame(setup)).not.toContain("first")
+    expect(frame(setup)).not.toContain("the answer is 42")
+    setup.renderer.destroy()
+  })
+})
+
+/** A session the store hands back, and the transcript it holds, both older than this run. */
+const RESUMED: Session = {
+  id: "session-resumed",
+  userId: "local",
+  title: "An earlier conversation",
+  model: "claude-sonnet-4-5",
+  createdAt: "2026-10-01T09:00:00.000Z",
+  updatedAt: "2026-10-01T09:00:00.000Z",
+}
+
+const RESUMED_ROWS: readonly Message[] = [
+  {
+    id: "r1",
+    sessionId: RESUMED.id,
+    role: "user",
+    content: "the first question",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:01.000Z",
+  },
+  {
+    id: "r2",
+    sessionId: RESUMED.id,
+    role: "system",
+    content: "you are a coding agent",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:02.000Z",
+  },
+  {
+    id: "r3",
+    sessionId: RESUMED.id,
+    role: "assistant",
+    content: "the first answer",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:03.000Z",
+  },
+  {
+    id: "r4",
+    sessionId: RESUMED.id,
+    role: "user",
+    content: "the second question",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:04.000Z",
+  },
+  {
+    id: "r5",
+    sessionId: RESUMED.id,
+    role: "assistant",
+    content: "half of the second answer",
+    status: "interrupted",
+    createdAt: "2026-10-01T09:00:05.000Z",
+  },
+]
+
+describe("toChatMessages", () => {
+  test("maps a stored transcript to view rows, dropping the system one", () => {
+    expect(toChatMessages(RESUMED_ROWS)).toEqual([
+      { id: "r1", role: "user", content: "the first question", reasoning: "", status: "complete", error: null },
+      { id: "r3", role: "assistant", content: "the first answer", reasoning: "", status: "complete", error: null },
+      { id: "r4", role: "user", content: "the second question", reasoning: "", status: "complete", error: null },
+      { id: "r5", role: "assistant", content: "half of the second answer", reasoning: "", status: "interrupted", error: null },
+    ])
+  })
+})
+
+describe("resume", () => {
+  test("hydrates the saved transcript and the next turn joins the same session", async () => {
+    const scripted = scriptedTransport([{ type: "finish" }], { parked: false })
+    const setup = await renderTui(<Probe transport={scripted.transport} />)
+
+    current().resume(RESUMED, RESUMED_ROWS)
+    await settle(setup)
+
+    expect(current().sessionId).toBe(RESUMED.id)
+    expect(current().messages).toEqual(toChatMessages(RESUMED_ROWS))
+    expect(frame(setup)).toContain("user complete [the first question] []")
+
+    // The session already exists, so no second one is created: this is the whole of what "resume"
+    // means for a session id, and the transcript the next turn sends proves it rather than a flag.
+    expect(current().submit("and the third", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    await untilSettled(setup, () => scripted.streamed.length === 1)
+
+    expect(scripted.created).toEqual([])
+    expect(scripted.streamed[0]?.sessionId).toBe(RESUMED.id)
+    // The whole transcript goes back, so the system row's absence and the interrupted answer's presence
+    // are both what the server would see rather than two facts asserted about the hook's own state.
+    expect(scripted.streamed[0]?.messages).toEqual([
+      { role: "user", content: "the first question" },
+      { role: "assistant", content: "the first answer" },
+      { role: "user", content: "the second question" },
+      { role: "assistant", content: "half of the second answer" },
+      { role: "user", content: "and the third" },
+    ])
+    setup.renderer.destroy()
+  })
+
+  test("a resume during a live turn aborts it, and the turn's own session id never writes back", async () => {
+    const scripted = scriptedTransport(ANSWER_FRAMES)
+    const setup = await renderTui(<Probe transport={scripted.transport} />)
+
+    expect(current().submit("a question that is still running", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    await settle(setup)
+    expect(frame(setup)).toContain("generating")
+
+    // The turn is parked inside the transport, so the resume lands while the session is still being made.
+    // The header stays "generating" here on purpose: the scripted transport parks on a promise the abort
+    // does not resolve, so its run has not unwound yet. A real transport's reader rejects the moment the
+    // signal fires, which is why the settled state is asserted after the gate opens rather than here.
+    current().resume(RESUMED, RESUMED_ROWS)
+    await settle(setup)
+    expect(current().sessionId).toBe(RESUMED.id)
+
+    scripted.release()
+    await settle(setup)
+    await settle(setup)
+
+    // The run that was interrupted finished late. Its generation no longer matches, so the session id it
+    // learned did not write itself back over the resumed one.
+    expect(frame(setup)).toContain("settled")
+    expect(current().sessionId).toBe(RESUMED.id)
+    expect(current().messages).toEqual(toChatMessages(RESUMED_ROWS))
+    expect(frame(setup)).not.toContain("a question that is still running")
     expect(frame(setup)).not.toContain("the answer is 42")
     setup.renderer.destroy()
   })
