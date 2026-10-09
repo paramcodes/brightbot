@@ -6,7 +6,7 @@ import { NIGHTCODE_HOME_ENV } from "@nightcode/shared"
 import { FileStore } from "./file-store.js"
 import { createStore, resolveStoreKind } from "./index.js"
 import { PrismaStore } from "./prisma-store.js"
-import type { PrismaDatabase, SessionRow } from "./types.js"
+import type { MessageRow, PrismaDatabase, SessionRow } from "./types.js"
 
 describe("store selection", () => {
   test("no DATABASE_URL selects the file store", () => {
@@ -45,10 +45,12 @@ describe("the process store", () => {
 })
 
 describe("the prisma store", () => {
-  function fakeDatabase(): PrismaDatabase & { rows: SessionRow[] } {
+  function fakeDatabase(): PrismaDatabase & { rows: SessionRow[]; messages: MessageRow[] } {
     const rows: SessionRow[] = []
+    const messages: MessageRow[] = []
     return {
       rows,
+      messages,
       user: {
         upsert: async (input) => input.create,
       },
@@ -66,6 +68,20 @@ describe("the prisma store", () => {
           return row
         },
         findUnique: async (input) => rows.find((row) => row.id === input.where.id) ?? null,
+      },
+      message: {
+        create: async (input) => {
+          const row: MessageRow = {
+            id: input.data.id,
+            sessionId: input.data.sessionId,
+            role: input.data.role,
+            content: input.data.content,
+            status: input.data.status,
+            createdAt: new Date("2026-10-09T00:00:00.000Z"),
+          }
+          messages.push(row)
+          return row
+        },
       },
     }
   }
@@ -89,5 +105,35 @@ describe("the prisma store", () => {
   test("an unknown id reads back as null rather than throwing", async () => {
     const store = new PrismaStore(fakeDatabase())
     expect(await store.getSession("missing")).toBe(null)
+  })
+
+  test("an appended message comes back with ISO strings and its own id", async () => {
+    const database = fakeDatabase()
+    const store = new PrismaStore(database)
+    const session = await store.createSession({ title: "Through Postgres", model: "claude-sonnet-5" })
+
+    const message = await store.appendMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "a partial answer",
+      status: "interrupted",
+    })
+    const second = await store.appendMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "the rest",
+      status: "complete",
+    })
+
+    expect(message).toEqual({
+      id: expect.any(String),
+      sessionId: session.id,
+      role: "assistant",
+      content: "a partial answer",
+      status: "interrupted",
+      createdAt: "2026-10-09T00:00:00.000Z",
+    })
+    expect(second.id).not.toBe(message.id)
+    expect(database.messages.map((row) => row.status)).toEqual(["interrupted", "complete"])
   })
 })

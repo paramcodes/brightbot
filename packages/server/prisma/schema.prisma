@@ -47,6 +47,7 @@ model Message {
   sessionId String
   role      Role
   content   String
+  status    String   @default("complete")
   createdAt DateTime @default(now())
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }

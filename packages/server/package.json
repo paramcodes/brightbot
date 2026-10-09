@@ -13,11 +13,14 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^2",
+    "@ai-sdk/openai": "^2",
     "@hono/zod-validator": "^0.9.1",
     "@nightcode/shared": "workspace:*",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@sentry/core": "^11.6.0",
+    "ai": "^5",
     "hono": "^4.13.13",
     "zod": "^4.6.5"
   },

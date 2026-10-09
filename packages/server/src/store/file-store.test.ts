@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { NIGHTCODE_HOME_ENV } from "@nightcode/shared"
@@ -76,5 +76,79 @@ describe("file store", () => {
     const fresh = new FileStore()
     expect(await fresh.getSession(one.id)).toEqual(one)
     expect(await fresh.getSession(two.id)).toEqual(two)
+  })
+
+  test("an appended message is written with its status and survives a fresh instance", async () => {
+    const store = new FileStore()
+    const session = await store.createSession({ title: "Chat", model: "m" })
+
+    const message = await store.appendMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "a partial answer",
+      status: "interrupted",
+    })
+
+    expect(message).toEqual({
+      id: expect.any(String),
+      sessionId: session.id,
+      role: "assistant",
+      content: "a partial answer",
+      status: "interrupted",
+      createdAt: expect.any(String),
+    })
+    expect((await new FileStore().getSession(session.id))?.id).toBe(session.id)
+
+    const document = JSON.parse(readFileSync(join(home, "store.json"), "utf8")) as { messages: unknown[] }
+    expect(document.messages).toEqual([message])
+  })
+
+  test("two overlapping appends both land", async () => {
+    const store = new FileStore()
+    const session = await store.createSession({ title: "Chat", model: "m" })
+
+    const first = store.appendMessage({ sessionId: session.id, role: "user", content: "one", status: "complete" })
+    const second = store.appendMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "two",
+      status: "complete",
+    })
+    const [one, two] = await Promise.all([first, second])
+
+    expect([one.content, two.content]).toEqual(["one", "two"])
+    expect(one.id).not.toBe(two.id)
+
+    const document = JSON.parse(readFileSync(join(home, "store.json"), "utf8")) as {
+      messages: { content: string }[]
+      sessions: { id: string }[]
+    }
+    expect(document.messages.map((message) => message.content)).toEqual(["one", "two"])
+    expect(document.sessions.map((sessionRow) => sessionRow.id)).toEqual([session.id])
+  })
+
+  test("a rejected write leaves the queue draining instead of wedging it", async () => {
+    const store = new FileStore()
+    const session = await store.createSession({ title: "Chat", model: "m" })
+    // A file where the store's directory belongs makes the write's `mkdirSync` throw.
+    rmSync(home, { recursive: true, force: true })
+    writeFileSync(home, "not a directory")
+
+    const first = store.appendMessage({
+      sessionId: session.id,
+      role: "user",
+      content: "lost",
+      status: "complete",
+    })
+    const second = store.appendMessage({
+      sessionId: session.id,
+      role: "assistant",
+      content: "also lost",
+      status: "interrupted",
+    })
+
+    // A chain that only advances on success would leave the second call pending forever.
+    const settled = await Promise.allSettled([first, second])
+    expect(settled.map((outcome) => outcome.status)).toEqual(["rejected", "rejected"])
   })
 })
