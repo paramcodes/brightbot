@@ -6,8 +6,8 @@ sub-issue per commit. Update a phase with `bun run tools/feature-map.ts --phase 
 | Phase | Focus | Commits | Status | Issue |
 | --- | --- | --- | --- | --- |
 | 1. Workspace Scaffolding & Core TUI Foundation | Bun monorepo, OpenTUI React shell, layout primitives, responder chain, toasts. | 1.1, 1.2, 1.3, 1.4, 1.5 | shipped | #3 |
-| 2. Navigation, Modals & Persistent Theming | Persistent config, themes, reusable dialog list, root command menu, memory router. | 2.1, 2.2, 2.3, 2.4 | planned | #9 |
-| 3. Backend Infrastructure, Database & Observability | Hono server, Prisma schema, RPC client types, Sentry middleware, file-backed default store. | 3.1, 3.2, 3.3, 3.4 | planned | #14 |
+| 2. Navigation, Modals & Persistent Theming | Persistent config, themes, reusable dialog list, root command menu, memory router. | 2.1, 2.2, 2.3, 2.4 | shipped | #9 |
+| 3. Backend Infrastructure, Database & Observability | Hono server, Prisma schema, RPC client types, Sentry middleware, file-backed default store. | 3.1, 3.2, 3.3, 3.4 | shipped | #14 |
 | 4. Real-Time AI Chat Engine & Interruption Flow | SSE streaming endpoint, message rendering, optimistic transitions, abort via Esc. | 4.1, 4.2, 4.3, 4.4 | planned | #19 |
 | 5. Agent Modes, Session Resumption & File Mentions | Plan vs Build mode, model picker, session history, @ file mentions. | 5.1, 5.2, 5.3, 5.4 | planned | #24 |
 | 6. Browser-to-CLI OAuth & User Security | PKCE, loopback server, browser login, restricted credential store, server-side auth. | 6.1, 6.2, 6.3, 6.4 | planned | #29 |
