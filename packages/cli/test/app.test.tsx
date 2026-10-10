@@ -128,11 +128,11 @@ describe("app shell", () => {
     expect(setup.captureCharFrame()).toContain("No generation to interrupt")
   })
 
-  test("a slash in an empty composer opens the command menu and lists every command", async () => {
+  test("the menu lists every command including the two Phase 7 added", async () => {
     const setup = await renderTui(<Shell />)
     await type(setup, "/")
     const screen = frame(setup)
-    for (const name of ["/clear", "/sessions", "/models", "/agents", "/usage", "/exit"]) {
+    for (const name of ["/clear", "/sessions", "/models", "/agents", "/usage", "/upgrade", "/exit"]) {
       expect(screen).toContain(name)
     }
     expect(screen).toContain("switch the active model")
@@ -153,14 +153,56 @@ describe("app shell", () => {
     expect(screen).not.toContain("/agents")
   })
 
-  test("return runs the highlighted command", async () => {
-    const setup = await renderTui(<Shell />)
+  test("return runs the highlighted command, and /usage reads the balance over the transport", async () => {
+    const scripted = scriptedTransport(ANSWER_FRAMES, {
+      creditUsage: {
+        balance: 412.5,
+        entries: [
+          {
+            id: "charge-1",
+            userId: "local",
+            sessionId: "session-1",
+            model: "claude-sonnet-4-5",
+            promptTokens: 1200,
+            completionTokens: 800,
+            credits: 18,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    })
+    const setup = await renderTui(<App chatTransport={scripted.transport} />)
+
     await type(setup, "/")
     await type(setup, "usage")
     await press(setup, ["RETURN"])
     const screen = frame(setup)
+
     expect(screen).not.toContain("filter commands")
-    expect(screen).toContain("/usage is not wired up yet")
+    expect(screen).not.toContain("/usage is not wired up yet")
+    expect(screen).toContain("412.50")
+    expect(screen).toContain("claude-sonnet-4-5")
+    expect(screen).toContain("18.00 cr")
+    // The mount read plus the reload the command performs, which is the re-read on open.
+    expect(scripted.usages).toHaveLength(2)
+  })
+
+  test("the /upgrade dialog asks for the pack and the server answers whether it granted it", async () => {
+    const scripted = scriptedTransport(ANSWER_FRAMES, {
+      creditUsage: { balance: 10, entries: [] },
+      topUp: { kind: "granted", credits: 500 },
+    })
+    const setup = await renderTui(<App chatTransport={scripted.transport} />)
+
+    await type(setup, "/")
+    await type(setup, "upgrade")
+    await press(setup, ["RETURN"])
+    expect(frame(setup)).toContain("add 500 credits")
+
+    await press(setup, ["RETURN"])
+    // The top-up is a promise that resolves into a toast, so the shell has to be given the macrotask
+    // the transport's resolution schedules before the frame carries it.
+    await untilSettled(setup, () => frame(setup).includes("Added 500.00 credits"))
   })
 
   test("with a turn live, escape closes the command menu and leaves the turn running", async () => {

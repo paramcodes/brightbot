@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
+import type { ApiErrorBody, ChatFrame, ChatRequest, CreditUsage, Message, NewSession, Session, TopUpResult } from "@nightcode/shared"
 import { chatFrameSchema } from "@nightcode/shared"
 import { hc } from "hono/client"
 import type { AppType } from "../../../server/src/app.js"
@@ -89,6 +89,16 @@ export const httpChatTransport: ChatTransport = {
     return await response.json()
   },
   stream: streamChat,
+  async usage(): Promise<CreditUsage> {
+    const response = await apiClient.api.credits.usage.$get()
+    if (!response.ok) throw await requestError(response)
+    return await response.json()
+  },
+  async topUp(): Promise<TopUpResult> {
+    const response = await apiClient.api.credits["top-up"].$post()
+    if (!response.ok) throw await requestError(response)
+    return await response.json()
+  },
 }
 
 /**

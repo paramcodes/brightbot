@@ -1,4 +1,4 @@
-/** The root palette catalog. Phase 5 owns `/sessions` and `/models`; Phase 7 owns `/usage`. */
+/** The root palette catalog. Phase 5 owns `/sessions` and `/models`; Phase 7 owns `/usage` and `/upgrade`. */
 export interface Command {
   id: string
   name: string
@@ -11,5 +11,6 @@ export const ROOT_COMMANDS: readonly Command[] = [
   { id: "models", name: "/models", summary: "switch the active model" },
   { id: "agents", name: "/agents", summary: "switch the active agent" },
   { id: "usage", name: "/usage", summary: "show credits and limits" },
+  { id: "upgrade", name: "/upgrade", summary: "add credits" },
   { id: "exit", name: "/exit", summary: "quit nightcode" },
 ]

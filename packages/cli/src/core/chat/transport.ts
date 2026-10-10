@@ -1,4 +1,4 @@
-import type { ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
+import type { ChatFrame, ChatRequest, CreditUsage, Message, NewSession, Session, TopUpResult } from "@nightcode/shared"
 
 /**
  * The chat boundary the CLI depends on, and the only reason the hooks know a server exists.
@@ -22,4 +22,8 @@ export interface ChatTransport {
   /** One session's transcript in arrival order. */
   listMessages(sessionId: string): Promise<Message[]>
   stream(request: ChatRequest, signal: AbortSignal): Promise<AsyncIterable<ChatFrame>>
+  /** The balance and the recent charges, which is what the `/usage` dialog renders. */
+  usage(): Promise<CreditUsage>
+  /** Adds credits, or hands back a checkout URL to open. */
+  topUp(): Promise<TopUpResult>
 }

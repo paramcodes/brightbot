@@ -1,4 +1,4 @@
-import type { AuthUser, ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
+import type { AuthUser, ChatFrame, ChatRequest, CreditUsage, Message, NewSession, Session, TopUpResult } from "@nightcode/shared"
 import type { ChatTransport } from "../src/core/chat/transport.js"
 
 export const SCRIPTED_USER: AuthUser = { id: "user-local", email: "local@nightcode.dev" }
@@ -25,6 +25,8 @@ export interface ScriptedTransport {
   readonly listed: Session[][]
   /** Every id `listMessages` was asked about, in the order they were asked. */
   readonly listedIds: string[]
+  /** What `usage` answered, one entry per call. The call takes no argument, so the answer is the record. */
+  readonly usages: CreditUsage[]
 }
 
 export interface ScriptedTransportOptions {
@@ -36,6 +38,10 @@ export interface ScriptedTransportOptions {
   readonly sessions?: readonly Session[]
   /** What `listMessages` answers for any session id. */
   readonly messages?: readonly Message[]
+  /** What `usage` answers for the `/usage` dialog. */
+  readonly creditUsage?: CreditUsage
+  /** What `topUp` answers for the `/upgrade` dialog. */
+  readonly topUp?: TopUpResult
 }
 
 /** How a real socket ends: the pending read settles once the signal fires, so the iterator finishes. */
@@ -61,6 +67,7 @@ export function scriptedTransport(
   const streamed: ChatRequest[] = []
   const listed: Session[][] = []
   const listedIds: string[] = []
+  const usages: CreditUsage[] = []
   const sessions = options.sessions ?? []
   const messages = options.messages ?? []
   const parked = options.parked ?? true
@@ -78,6 +85,7 @@ export function scriptedTransport(
     streamed,
     listed,
     listedIds,
+    usages,
     release: () => open(),
     transport: {
       async createSession(input) {
@@ -105,6 +113,14 @@ export function scriptedTransport(
             }
           },
         }
+      },
+      async usage() {
+        const answer = options.creditUsage ?? { balance: 0, entries: [] }
+        usages.push(answer)
+        return answer
+      },
+      async topUp() {
+        return options.topUp ?? { kind: "granted", credits: 0 }
       },
     },
   }
