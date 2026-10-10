@@ -86,7 +86,12 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
   }
 
   const result = await relayTurn(
-    turn.selectModel(turn.session.model).stream({ model: turn.session.model, messages: turn.body.messages, signal }),
+    turn.selectModel(turn.session.model).stream({
+      model: turn.session.model,
+      messages: turn.body.messages,
+      system: turn.body.system,
+      signal,
+    }),
     write,
     signal,
   )

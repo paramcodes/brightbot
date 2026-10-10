@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { NIGHTCODE_HOME_ENV } from "@nightcode/shared"
+import { BUILD_MODE_PROMPT, NIGHTCODE_HOME_ENV, PLAN_MODE_PROMPT } from "@nightcode/shared"
 import type { CliRenderer } from "@opentui/core"
 import { App } from "../src/app.js"
 import { useResponder } from "../src/core/responder/useResponder.js"
@@ -286,6 +286,29 @@ describe("app shell", () => {
     const row = headerRow(setup)
     expect(row).toContain("build")
     expect(row).not.toContain("plan")
+  })
+
+  test("the mode the header shows is the system prompt the next turn sends", async () => {
+    const scripted = scriptedTransport([{ type: "finish" }], { parked: false })
+    const setup = await renderTui(<App chatTransport={scripted.transport} />, WIDE)
+    expect(headerRow(setup)).toContain("plan")
+
+    await type(setup, "what does this repo do")
+    await press(setup, ["RETURN"])
+    await untilSettled(setup, () => scripted.streamed.length === 1)
+
+    // The mode cell on screen and the prompt on the wire are the same mode. A header that showed build
+    // while the model was told plan mode is the failure this asserts against.
+    expect(scripted.streamed[0]?.system).toBe(PLAN_MODE_PROMPT)
+
+    await type(setup, "/agents")
+    await press(setup, ["RETURN"])
+    await type(setup, "now change it")
+    await press(setup, ["RETURN"])
+    await untilSettled(setup, () => scripted.streamed.length === 2)
+
+    expect(scripted.streamed[1]?.system).toBe(BUILD_MODE_PROMPT)
+    setup.renderer.destroy()
   })
 
   test("escape leaves the model picker and its filter, and the header is untouched", async () => {

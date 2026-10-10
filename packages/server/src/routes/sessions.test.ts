@@ -48,7 +48,11 @@ async function ask(sessionId: string, content: string): Promise<void> {
   const response = await app.request("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, messages: [{ role: "user", content }] }),
+    body: JSON.stringify({
+      sessionId,
+      messages: [{ role: "user", content }],
+      system: "the system prompt the turn was sent with",
+    }),
   })
   expect(response.status).toBe(200)
   // The assistant row is written after the stream ends, and a finished fetch does not guarantee the

@@ -15,6 +15,11 @@ export interface ModelRequest {
   /** The model the session asked for. The session row is the single source of which model answered. */
   readonly model: string
   readonly messages: readonly ChatMessage[]
+  /**
+   * What the model is told it is, chosen by the client's mode. Required rather than optional so a
+   * provider that forgets to pass it through fails the typecheck instead of answering in no mode.
+   */
+  readonly system: string
   /** Aborted by a client disconnect, so the provider stops pulling from its upstream. */
   readonly signal: AbortSignal
 }

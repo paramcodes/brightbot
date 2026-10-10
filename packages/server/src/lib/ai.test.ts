@@ -5,6 +5,7 @@ import { resolveScriptedOptions, scriptedModel } from "./providers/scripted.js"
 const REQUEST: ModelRequest = {
   model: "scripted",
   messages: [{ role: "user", content: "hello" }],
+  system: "the system prompt the model is handed",
   signal: new AbortController().signal,
 }
 
