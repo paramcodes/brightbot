@@ -7,8 +7,10 @@ import { chatFrameSchema, NIGHTCODE_HOME_ENV } from "@nightcode/shared"
 import { Hono } from "hono"
 import { app } from "../app.js"
 import { localAuthProvider } from "../auth/local.js"
-import type { Model, ModelEvent } from "../lib/ai.js"
+import { type Model, type ModelEvent, resolveModel } from "../lib/ai.js"
 import { requireAuth } from "../middleware/auth.js"
+import { onApiError } from "../middleware/error-handler.js"
+import { LocalCreditLedger } from "../services/credits.js"
 import { createChatRoute } from "./chat.js"
 
 type StoreRow = { id: string; sessionId: string; role: string; content: string; status: string; createdAt: string }
@@ -198,6 +200,43 @@ describe("POST /api/chat", () => {
       status: "interrupted",
       createdAt: expect.any(String),
     })
+  })
+
+  test("an exhausted balance is refused before the stream opens", async () => {
+    const session = await createSession()
+    // A real local ledger emptied by a charge the top-priced table cannot pay for, and the route
+    // mounted over the same auth middleware the app uses, because the gate reads the caller off the
+    // request context.
+    const gatedLedger = new LocalCreditLedger(join(home, "credits.json"))
+    await gatedLedger.record({
+      userId: "local",
+      sessionId: session.id,
+      model: "gpt-5-pro",
+      usage: { promptTokens: 1_000_000, completionTokens: 1_000_000 },
+    })
+    const gated = new Hono()
+      .use("/api/*", requireAuth(localAuthProvider({ secret: SECRET })))
+      .route(
+        "/api/chat",
+        createChatRoute(
+          (model) => resolveModel(process.env, model),
+          () => gatedLedger,
+        ),
+      )
+      .onError(onApiError(() => {}))
+
+    const response = await gated.request("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: session.id, messages: [{ role: "user", content: "hi there" }], system: "prompt" }),
+    })
+
+    expect(response.status).toBe(402)
+    expect(await response.json()).toEqual({
+      error: { code: "PAYMENT_REQUIRED", message: "You have no credits left. Run /upgrade to add more." },
+    })
+    // The refusal happens before the turn is appended, so the store holds no row for a turn that never ran.
+    expect(readRows()).toEqual([])
   })
 
   test("a provider failure writes the error frame and persists no assistant row", async () => {

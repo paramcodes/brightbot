@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator"
-import type { ChatFrame, ChatRequest, Session, Store } from "@nightcode/shared"
+import type { AuthUser, ChatFrame, ChatRequest, CreditLedger, Session, Store } from "@nightcode/shared"
 import { CHAT_STREAM_EVENT, chatRequestSchema } from "@nightcode/shared"
 import { Hono } from "hono"
 import type { SSEStreamingApi } from "hono/streaming"
@@ -8,7 +8,9 @@ import { z } from "zod"
 import { type Model, type ModelEvent, resolveModel, toFrame } from "../lib/ai.js"
 import { reportError } from "../lib/sentry.js"
 import { caller } from "../middleware/auth.js"
+import { requireCredits } from "../middleware/credits.js"
 import { ApiError, errorResponse } from "../middleware/error-handler.js"
+import { createCreditLedger } from "../services/credits.js"
 import { createStore } from "../store/index.js"
 
 /** What a turn ended as, decided by one `AbortSignal` evaluated at the last possible moment. */
@@ -72,6 +74,8 @@ interface Turn {
   readonly store: Store
   readonly session: Session
   readonly body: ChatRequest
+  readonly user: AuthUser
+  readonly context: { get: (key: string) => unknown }
   readonly selectModel: (model: string) => Model
 }
 
@@ -123,8 +127,11 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
 // The return type is left inferred. Naming it `Hono` widens the route's schema to `BlankSchema`, which
 // erases this route from `hc<AppType>` and leaves the CLI with a client that cannot see the one route
 // the whole streaming path depends on.
-export function createChatRoute(selectModel: (model: string) => Model = (model) => resolveModel(process.env, model)) {
-  return new Hono().post(
+export function createChatRoute(
+  selectModel: (model: string) => Model = (model) => resolveModel(process.env, model),
+  selectLedger: () => CreditLedger = () => createCreditLedger(),
+) {
+  return new Hono().use("*", requireCredits(selectLedger)).post(
     "/",
     zValidator("json", chatRequestSchema, (result, _c) => (result.success ? undefined : errorResponse(400, z.prettifyError(result.error)))),
     async (c) => {
@@ -146,7 +153,7 @@ export function createChatRoute(selectModel: (model: string) => Model = (model) 
         // throws, so the body catches its own failures instead: that keeps the wire inside the union.
         async (stream) => {
           try {
-            await streamTurn(stream, { store, session, body, selectModel }, c.req.raw.signal)
+            await streamTurn(stream, { store, session, body, user, context: c, selectModel }, c.req.raw.signal)
           } catch (error) {
             await reportStreamFailure(error, stream)
           }
