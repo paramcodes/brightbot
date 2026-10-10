@@ -73,6 +73,24 @@ async function shellWith(onInput: (input: InputRenderable) => void): Promise<Tui
   return renderTui(<Shell onInput={onInput} />)
 }
 
+/**
+ * The path the picker has highlighted, read off the row the user sees.
+ *
+ * The row is read from the screen rather than from the component's state, because this is the
+ * assertion a user could make by looking. The composer's own row is excluded by its `@`, and the
+ * first row is short enough that the panel never truncates it.
+ */
+function selectedPath(setup: TuiHarness): string {
+  const row = frame(setup)
+    .split("\n")
+    .find((line) => line.includes("│ > ") && line.includes("packages/") && !line.includes("@packages/"))
+  if (row === undefined) throw new Error("the picker has no highlighted row")
+  return row
+    .replace(/^.*?│ > /, "")
+    .replace(/\s*│.*$/, "")
+    .trim()
+}
+
 describe("mention picker", () => {
   test("@packages/ lists the paths under it, ranked, and nothing else", async () => {
     const setup = await renderTui(<Shell onInput={() => {}} />)
@@ -149,11 +167,14 @@ describe("mention picker", () => {
     })
     await mention(setup)
     await type(setup, "packages/")
+    expect(selectedPath(setup)).toBe("packages/cli/package.json")
+
     await press(setup, ["UP"])
-    await press(setup, ["DOWN"])
-    await press(setup, ["DOWN"])
+    // UP at the top is a no-op, and if it moved the selection off the list then the `return` below
+    // would fall through to the composer's own submit binding and no path would ever be inserted.
+    expect(selectedPath(setup)).toBe("packages/cli/package.json")
     await press(setup, ["RETURN"])
-    expect(input?.value).toBe("packages/cli/src/components/chat/BotMessage.test.tsx ")
+    expect(input?.value).toBe("packages/cli/package.json ")
     setup.renderer.destroy()
   })
 
