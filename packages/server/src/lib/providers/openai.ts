@@ -14,6 +14,7 @@ export function openaiModel(modelName: string = resolveOpenAIModelName(process.e
     async *stream(request: ModelRequest): AsyncGenerator<ModelEvent> {
       const result = streamText({
         model: openai(request.model || modelName),
+        system: request.system,
         messages: toModelMessages(request.messages),
         abortSignal: request.signal,
       })

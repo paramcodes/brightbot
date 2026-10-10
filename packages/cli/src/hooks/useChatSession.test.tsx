@@ -32,6 +32,9 @@ function current(): ChatSession {
 /** The model the caller passes, standing in for the live one `RootLayout` hands over. */
 const SUBMITTED_MODEL = "claude-sonnet-4-5"
 
+/** The system prompt the caller passes, standing in for the mode's own text. */
+const SUBMITTED_SYSTEM = "the system prompt the caller chose"
+
 function message(overrides: Partial<ChatMessage>): ChatMessage {
   return { id: "m1", role: "assistant", content: "", reasoning: "", status: "complete", error: null, ...overrides }
 }
@@ -41,7 +44,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport()
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("hello there", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("hello there", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({ accepted: true })
     await settle(setup)
 
     const screen = frame(setup)
@@ -58,7 +61,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("what is it", SUBMITTED_MODEL)
+    current().submit("what is it", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[the answer is 42]"))
 
@@ -70,7 +73,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "text", text: "done" }, { type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("go", SUBMITTED_MODEL)
+    current().submit("go", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[done]"))
 
@@ -86,7 +89,7 @@ describe("useChatSession", () => {
     ])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("go", SUBMITTED_MODEL)
+    current().submit("go", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("The model failed to answer this turn"))
 
@@ -98,8 +101,11 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("first", SUBMITTED_MODEL)).toEqual({ accepted: true })
-    expect(current().submit("second", SUBMITTED_MODEL)).toEqual({ accepted: false, reason: "A turn is already running" })
+    expect(current().submit("first", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({ accepted: true })
+    expect(current().submit("second", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({
+      accepted: false,
+      reason: "A turn is already running",
+    })
     await settle(setup)
 
     expect(frame(setup)).toContain("user complete [first] []")
@@ -117,7 +123,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("rename the readme button", SUBMITTED_MODEL)
+    current().submit("rename the readme button", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -125,7 +131,7 @@ describe("useChatSession", () => {
     expect(current().sessionId).toBe("session-scripted")
 
     scripted.release()
-    expect(current().submit("and the docs", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("and the docs", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({ accepted: true })
     await untilSettled(setup, () => frame(setup).includes("and the docs"))
 
     expect(scripted.created).toHaveLength(1)
@@ -137,7 +143,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("switch me to opus", "claude-opus-4-5")
+    current().submit("switch me to opus", { model: "claude-opus-4-5", system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -149,11 +155,11 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("what is it", SUBMITTED_MODEL)
+    current().submit("what is it", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[the answer is 42]"))
 
-    current().submit("and now?", SUBMITTED_MODEL)
+    current().submit("and now?", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     await untilSettled(setup, () => scripted.streamed.length === 2)
 
     expect(scripted.streamed[1]).toEqual({
@@ -163,6 +169,7 @@ describe("useChatSession", () => {
         { role: "assistant", content: "the answer is 42" },
         { role: "user", content: "and now?" },
       ],
+      system: SUBMITTED_SYSTEM,
     })
     setup.renderer.destroy()
   })
@@ -173,7 +180,7 @@ describe("useChatSession", () => {
     })
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("stop me partway", SUBMITTED_MODEL)
+    current().submit("stop me partway", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[half an ]"))
 
@@ -184,7 +191,7 @@ describe("useChatSession", () => {
     // which is why the status rather than the content is what marks the turn.
     expect(frame(setup)).toContain("assistant interrupted [half an ] [weighing ]")
     expect(frame(setup)).toContain("settled")
-    expect(current().submit("and now", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("and now", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({ accepted: true })
     setup.renderer.destroy()
   })
 
@@ -192,7 +199,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("something", SUBMITTED_MODEL)
+    current().submit("something", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -209,7 +216,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("first", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("first", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({ accepted: true })
 
     // The turn is parked inside the transport, so `/clear` lands while the session is still being made.
     current().reset()
@@ -309,7 +316,7 @@ describe("resume", () => {
 
     // The session already exists, so no second one is created: this is the whole of what "resume"
     // means for a session id, and the transcript the next turn sends proves it rather than a flag.
-    expect(current().submit("and the third", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("and the third", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({ accepted: true })
     await untilSettled(setup, () => scripted.streamed.length === 1)
 
     expect(scripted.created).toEqual([])
@@ -330,7 +337,9 @@ describe("resume", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("a question that is still running", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("a question that is still running", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM })).toEqual({
+      accepted: true,
+    })
     await settle(setup)
     expect(frame(setup)).toContain("generating")
 

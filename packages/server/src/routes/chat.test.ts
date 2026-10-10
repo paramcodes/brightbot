@@ -65,7 +65,11 @@ function post(baseUrl: string, sessionId: string, signal?: AbortSignal): Promise
   return fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, messages: [{ role: "user", content: "hi there" }] }),
+    body: JSON.stringify({
+      sessionId,
+      messages: [{ role: "user", content: "hi there" }],
+      system: "the system prompt the client chose",
+    }),
     signal,
   })
 }
@@ -257,11 +261,54 @@ describe("POST /api/chat", () => {
     rmSync(home, { force: true })
   })
 
+  test("a request with no system prompt is refused with the 400 envelope", async () => {
+    const response = await app.request("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: "any", messages: [{ role: "user", content: "hi there" }] }),
+    })
+
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as ApiErrorBody
+    expect(body.error.code).toBe("BAD_REQUEST")
+    expect(body.error.message).toContain("system")
+  })
+
+  test("the model is handed the system prompt the turn was sent with", async () => {
+    const seen: string[] = []
+    const capturing: Model = {
+      name: "capturing",
+      async *stream(request): AsyncGenerator<ModelEvent> {
+        seen.push(request.system)
+        yield { type: "text", text: "ok" }
+      },
+    }
+    const session = await createSession()
+
+    await withServer(
+      new Hono().route(
+        "/api/chat",
+        createChatRoute(() => capturing),
+      ).fetch,
+      async (baseUrl) => {
+        const response = await post(baseUrl, session.id)
+        expect(response.status).toBe(200)
+        await collect(response)
+      },
+    )
+
+    expect(seen).toEqual(["the system prompt the client chose"])
+  })
+
   test("a request whose last message is not the user's is refused with the 400 envelope", async () => {
     const response = await app.request("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: "any", messages: [{ role: "assistant", content: "not a turn" }] }),
+      body: JSON.stringify({
+        sessionId: "any",
+        messages: [{ role: "assistant", content: "not a turn" }],
+        system: "the system prompt the client chose",
+      }),
     })
 
     expect(response.status).toBe(400)
@@ -274,7 +321,11 @@ describe("POST /api/chat", () => {
     const response = await app.request("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: "missing", messages: [{ role: "user", content: "hi there" }] }),
+      body: JSON.stringify({
+        sessionId: "missing",
+        messages: [{ role: "user", content: "hi there" }],
+        system: "the system prompt the client chose",
+      }),
     })
 
     expect(response.status).toBe(404)

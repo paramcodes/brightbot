@@ -12,11 +12,23 @@ const EMPTY_TITLE = "Untitled session"
 
 export type SubmitOutcome = { readonly accepted: true } | { readonly accepted: false; readonly reason: string }
 
+/**
+ * What the caller knows before a turn starts.
+ *
+ * Both fields are the client's own choices rather than server state: the model names a row of the
+ * shared catalog, and the system prompt is the mode's own text. The server resolves a provider from
+ * the session's model row, so the two travel separately on purpose.
+ */
+export interface TurnContext {
+  readonly model: string
+  readonly system: string
+}
+
 export interface ChatSession {
   readonly messages: readonly ChatMessage[]
   readonly sessionId: string | null
   readonly generating: boolean
-  readonly submit: (prompt: string, model: string) => SubmitOutcome
+  readonly submit: (prompt: string, turn: TurnContext) => SubmitOutcome
   readonly abort: () => void
   readonly reset: () => void
   /** Puts a saved transcript and its session on screen, dropping whatever the view held before. */
@@ -75,25 +87,27 @@ export function useChatSession(transport: ChatTransport): ChatSession {
     setMessages((current) => current.map((message) => (message.id === id ? apply(message) : message)))
   }
 
-  const submit = (prompt: string, model: string): SubmitOutcome => {
+  const submit = (prompt: string, turn: TurnContext): SubmitOutcome => {
     if (stream.active) return { accepted: false, reason: "A turn is already running" }
 
     const question: ChatMessage = { id: randomUUID(), role: "user", content: prompt, reasoning: "", status: "complete", error: null }
     const answerId = randomUUID()
     const stub: ChatMessage = { id: answerId, role: "assistant", content: "", reasoning: "", status: "streaming", error: null }
     setMessages((current) => [...current, question, stub])
-    const turn = generation.current
+    // The generation this submit belongs to. A later `/clear` bumps the counter, and comparing against
+    // it is what stops a run from the discarded conversation from writing its session id back.
+    const started = generation.current
 
     let failure: string | null = null
     const run = async (signal: AbortSignal): Promise<ChatMessageStatus> => {
       try {
         let id = sessionId
         if (id === null) {
-          id = (await transport.createSession({ title: sessionTitle(prompt), model })).id
-          if (generation.current !== turn) return "interrupted"
+          id = (await transport.createSession({ title: sessionTitle(prompt), model: turn.model })).id
+          if (generation.current !== started) return "interrupted"
           setSessionId(id)
         }
-        const frames = await transport.stream({ sessionId: id, messages: transcript([...messages, question]) }, signal)
+        const frames = await transport.stream({ sessionId: id, messages: transcript([...messages, question]), system: turn.system }, signal)
         for await (const frame of frames) {
           if (frame.type === "text") patch(answerId, (message) => ({ ...message, content: message.content + frame.text }))
           if (frame.type === "reasoning") patch(answerId, (message) => ({ ...message, reasoning: message.reasoning + frame.text }))
@@ -114,7 +128,7 @@ export function useChatSession(transport: ChatTransport): ChatSession {
 
     void stream.start(run, {
       onSettled: (status) => {
-        if (generation.current === turn) patch(answerId, (message) => settled(message, status, failure))
+        if (generation.current === started) patch(answerId, (message) => settled(message, status, failure))
       },
     })
     return { accepted: true }

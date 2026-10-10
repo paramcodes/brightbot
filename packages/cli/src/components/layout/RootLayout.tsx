@@ -1,5 +1,5 @@
 import { cwd } from "node:process"
-import type { Session } from "@nightcode/shared"
+import { type Session, systemPrompt } from "@nightcode/shared"
 import type { CliRenderer, InputRenderable, KeyEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
@@ -212,8 +212,9 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
 
   const submit = (prompt: string) => {
     // The model the user picked has to reach the turn, or the picker changes a label and nothing
-    // else: the session row is what the server resolves a provider from.
-    const outcome = chat.submit(prompt, model)
+    // else: the session row is what the server resolves a provider from. The mode's system prompt
+    // travels beside it, so the mode the header shows is the mode the model is told it is in.
+    const outcome = chat.submit(prompt, { model, system: systemPrompt(mode) })
     if (!outcome.accepted) {
       push({ kind: "warning", message: outcome.reason })
       return

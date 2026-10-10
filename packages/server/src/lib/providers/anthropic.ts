@@ -14,6 +14,7 @@ export function anthropicModel(modelName: string = resolveAnthropicModelName(pro
     async *stream(request: ModelRequest): AsyncGenerator<ModelEvent> {
       const result = streamText({
         model: anthropic(request.model || modelName),
+        system: request.system,
         messages: toModelMessages(request.messages),
         abortSignal: request.signal,
       })
