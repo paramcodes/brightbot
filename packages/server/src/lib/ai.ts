@@ -1,4 +1,4 @@
-import type { ChatFrame, ChatMessage } from "@nightcode/shared"
+import type { ChatFrame, ChatMessage, TokenUsage } from "@nightcode/shared"
 import { MODELS } from "@nightcode/shared"
 import type { ModelMessage } from "ai"
 import { anthropicModel } from "./providers/anthropic.js"
@@ -30,7 +30,11 @@ export interface ModelRequest {
  */
 export interface Model {
   readonly name: string
-  stream(request: ModelRequest): AsyncIterable<ModelEvent>
+  /**
+   * Streams a turn. The generator's return value is what the provider billed, which is the one thing
+   * a consumer learns when the stream ends and the one moment a provider knows it.
+   */
+  stream(request: ModelRequest): AsyncGenerator<ModelEvent, TokenUsage | undefined>
 }
 
 export const MODEL_KINDS = ["scripted", "anthropic", "openai"] as const

@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator"
-import type { AuthUser, ChatFrame, ChatRequest, CreditLedger, Session, Store } from "@nightcode/shared"
+import type { AuthUser, ChatFrame, ChatRequest, CreditLedger, Session, Store, TokenUsage } from "@nightcode/shared"
 import { CHAT_STREAM_EVENT, chatRequestSchema } from "@nightcode/shared"
 import { Hono } from "hono"
 import type { SSEStreamingApi } from "hono/streaming"
@@ -8,14 +8,21 @@ import { z } from "zod"
 import { type Model, type ModelEvent, resolveModel, toFrame } from "../lib/ai.js"
 import { reportError } from "../lib/sentry.js"
 import { caller } from "../middleware/auth.js"
-import { requireCredits } from "../middleware/credits.js"
+import { ledger, requireCredits } from "../middleware/credits.js"
 import { ApiError, errorResponse } from "../middleware/error-handler.js"
 import { createCreditLedger } from "../services/credits.js"
+import { recordTurnUsage } from "../services/token-tracker.js"
 import { createStore } from "../store/index.js"
 
 /** What a turn ended as, decided by one `AbortSignal` evaluated at the last possible moment. */
 export type TurnResult =
-  | { readonly outcome: "complete" | "interrupted"; readonly content: string; readonly reasoning: string }
+  | {
+      readonly outcome: "complete" | "interrupted"
+      readonly content: string
+      readonly reasoning: string
+      /** What the provider billed, or nothing when the turn never reached its `finish` part. */
+      readonly usage: TokenUsage | undefined
+    }
   | { readonly outcome: "failed"; readonly code: string; readonly message: string }
 
 /**
@@ -31,11 +38,17 @@ export async function relayTurn(
 ): Promise<TurnResult> {
   let content = ""
   let reasoning = ""
+  let usage: TokenUsage | undefined
   const iterator = events[Symbol.asyncIterator]()
   try {
     while (!signal.aborted) {
       const next = await iterator.next()
-      if (next.done) break
+      if (next.done) {
+        // The generator's return value arrives with `done`, and it is the only moment a consumer
+        // learns what the provider billed.
+        usage = next.value
+        break
+      }
       const event = next.value
       if (event.type === "text") content += event.text
       else reasoning += event.text
@@ -47,8 +60,8 @@ export async function relayTurn(
     reportError(error)
     return { outcome: "failed", code: "MODEL_FAILED", message: "The model failed to answer this turn" }
   }
-  if (signal.aborted) return { outcome: "interrupted", content, reasoning }
-  return { outcome: "complete", content, reasoning }
+  if (signal.aborted) return { outcome: "interrupted", content, reasoning, usage: undefined }
+  return { outcome: "complete", content, reasoning, usage }
 }
 
 const STREAM_FAILURE: ChatFrame = { type: "error", code: "STREAM_FAILED", message: "The stream failed" }
@@ -112,6 +125,12 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
       content: result.content,
       status: result.outcome,
     })
+  }
+  // Charged after the row is on disk and before the finish frame, so a client that dies between the
+  // two still leaves a turn that was paid for. An interrupted turn carries no usage, because its
+  // stream never reached the `finish` part that reports it.
+  if (result.usage) {
+    await recordTurnUsage(ledger(turn.context), { user: turn.user, session: turn.session, model: turn.session.model, usage: result.usage })
   }
   // The row is already on disk, so a client that dies between this write and `finish` still sees a turn
   // that exists.
