@@ -3,6 +3,8 @@ import { type Session, systemPrompt } from "@nightcode/shared"
 import type { CliRenderer, InputRenderable, KeyEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { currentUser } from "../../auth/identity.js"
+import { openTokenStore } from "../../auth/token-storage.js"
 import { usePreferences } from "../../context/PreferencesContext.js"
 import type { ChatTransport } from "../../core/chat/transport.js"
 import { keyToken } from "../../core/keys.js"
@@ -38,6 +40,9 @@ export function headerStatus(chat: Pick<ChatSession, "generating" | "messages">)
 /** Header, the routed body, the composer, the hint row, and the `/` palette. */
 export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const renderer = useRenderer()
+  // Read once per shell rather than per submit: a sign-out in another terminal is a `nightcode login`
+  // away, not something a running shell should silently pick up mid-conversation.
+  const tokenStore = openTokenStore()
   const { theme, mode, model, setMode, setModel } = usePreferences()
   const { path, navigate } = useRouter()
   const { push } = useToast()
@@ -213,8 +218,10 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const submit = (prompt: string) => {
     // The model the user picked has to reach the turn, or the picker changes a label and nothing
     // else: the session row is what the server resolves a provider from. The mode's system prompt
-    // travels beside it, so the mode the header shows is the mode the model is told it is in.
-    const outcome = chat.submit(prompt, { model, system: systemPrompt(mode) })
+    // travels beside it, so the mode the header shows is the mode the model is told it is in. The
+    // identity is the CLI's own token when it has one and the local user when it does not, which is
+    // what lets `nightcode` answer a prompt with no credentials at all.
+    const outcome = chat.submit(prompt, { model, system: systemPrompt(mode), user: currentUser(tokenStore) })
     if (!outcome.accepted) {
       push({ kind: "warning", message: outcome.reason })
       return

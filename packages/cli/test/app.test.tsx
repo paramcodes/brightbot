@@ -274,7 +274,7 @@ describe("app shell", () => {
     await press(setup, ["RETURN"])
     await untilSettled(setup, () => scripted.created.length === 1)
 
-    expect(scripted.created).toEqual([{ title: "what does this repo do", model: "claude-haiku-4-5" }])
+    expect(scripted.created).toEqual([{ title: "what does this repo do", model: "claude-haiku-4-5", userId: "local" }])
   })
 
   test("/agents flips the mode the header shows", async () => {

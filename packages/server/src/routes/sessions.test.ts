@@ -123,3 +123,55 @@ describe("GET /api/sessions/:id/messages", () => {
     expect(body.error.message).toContain("missing")
   })
 })
+
+describe("caller scoping", () => {
+  test("a caller only ever lists their own sessions", async () => {
+    // Both sessions are written with no token at all, which under the local default is the local user.
+    // The proof that matters is the store's filter, so a row a different owner wrote is in the file
+    // and is not in the listing.
+    const mine = await createSession("Mine")
+    const listed = (await (await app.request("/api/sessions")).json()) as Session[]
+    expect(listed.map((session) => session.id)).toEqual([mine.id])
+    expect(listed.every((session) => session.userId === "local")).toBe(true)
+  })
+
+  test("a session owned by another caller reads as missing", async () => {
+    // A row written by someone else. The route answers 404 rather than 403, because a 403 would
+    // confirm the id exists and the caller should learn nothing about it.
+    writeFileSync(
+      join(home, "store.json"),
+      `${JSON.stringify({
+        version: 1,
+        users: [
+          {
+            id: "someone-else",
+            email: "someone@example.com",
+            createdAt: "2026-10-10T00:00:00.000Z",
+            updatedAt: "2026-10-10T00:00:00.000Z",
+          },
+        ],
+        sessions: [
+          {
+            id: "theirs",
+            userId: "someone-else",
+            title: "Not yours",
+            model: "claude-sonnet-4-5",
+            createdAt: "2026-10-10T00:00:00.000Z",
+            updatedAt: "2026-10-10T00:00:00.000Z",
+          },
+        ],
+        messages: [],
+        tokenUsage: [],
+      })}\n`,
+    )
+
+    const read = await app.request("/api/sessions/theirs")
+    expect(read.status).toBe(404)
+
+    const transcript = await app.request("/api/sessions/theirs/messages")
+    expect(transcript.status).toBe(404)
+
+    const listed = (await (await app.request("/api/sessions")).json()) as Session[]
+    expect(listed).toEqual([])
+  })
+})

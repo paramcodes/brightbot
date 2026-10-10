@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { ChatRequest, Message, Session } from "@nightcode/shared"
+import type { AuthUser, ChatRequest, Message, Session } from "@nightcode/shared"
 import { useRef, useState } from "react"
 import type { ChatTransport } from "../core/chat/transport.js"
 import type { ChatMessage, ChatMessageStatus } from "../core/chat/types.js"
@@ -15,13 +15,14 @@ export type SubmitOutcome = { readonly accepted: true } | { readonly accepted: f
 /**
  * What the caller knows before a turn starts.
  *
- * Both fields are the client's own choices rather than server state: the model names a row of the
- * shared catalog, and the system prompt is the mode's own text. The server resolves a provider from
- * the session's model row, so the two travel separately on purpose.
+ * Every field is the client's own choice rather than server state: the model names a row of the shared
+ * catalog, the system prompt is the mode's own text, and the identity is the CLI's own token. The
+ * server resolves a provider from the session's model row, so the three travel separately on purpose.
  */
 export interface TurnContext {
   readonly model: string
   readonly system: string
+  readonly user: AuthUser
 }
 
 export interface ChatSession {
@@ -103,7 +104,7 @@ export function useChatSession(transport: ChatTransport): ChatSession {
       try {
         let id = sessionId
         if (id === null) {
-          id = (await transport.createSession({ title: sessionTitle(prompt), model: turn.model })).id
+          id = (await transport.createSession({ title: sessionTitle(prompt), model: turn.model, userId: turn.user.id })).id
           if (generation.current !== started) return "interrupted"
           setSessionId(id)
         }

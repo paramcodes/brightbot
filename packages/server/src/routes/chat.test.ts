@@ -6,10 +6,14 @@ import type { ApiErrorBody, ChatFrame, Session } from "@nightcode/shared"
 import { chatFrameSchema, NIGHTCODE_HOME_ENV } from "@nightcode/shared"
 import { Hono } from "hono"
 import { app } from "../app.js"
+import { localAuthProvider } from "../auth/local.js"
 import type { Model, ModelEvent } from "../lib/ai.js"
+import { requireAuth } from "../middleware/auth.js"
 import { createChatRoute } from "./chat.js"
 
 type StoreRow = { id: string; sessionId: string; role: string; content: string; status: string; createdAt: string }
+
+const SECRET = "the-chat-test-secret"
 
 const originalHome = process.env[NIGHTCODE_HOME_ENV]
 const originalProvider = process.env.NIGHTCODE_MODEL_PROVIDER
@@ -205,7 +209,9 @@ describe("POST /api/chat", () => {
         throw new Error("the provider exploded")
       },
     }
-    const failingApp = new Hono().route(
+    // Mounted with the same auth middleware the real app uses, because the route now reads the
+    // caller off the request context and a route mounted bare would answer as nobody.
+    const failingApp = new Hono().use("/api/*", requireAuth(localAuthProvider({ secret: SECRET }))).route(
       "/api/chat",
       createChatRoute(() => failing),
     )
@@ -243,7 +249,7 @@ describe("POST /api/chat", () => {
         yield { type: "text", text: "partial" }
       },
     }
-    const sabotagedApp = new Hono().route(
+    const sabotagedApp = new Hono().use("/api/*", requireAuth(localAuthProvider({ secret: SECRET }))).route(
       "/api/chat",
       createChatRoute(() => sabotaging),
     )
@@ -286,7 +292,7 @@ describe("POST /api/chat", () => {
     const session = await createSession()
 
     await withServer(
-      new Hono().route(
+      new Hono().use("/api/*", requireAuth(localAuthProvider({ secret: SECRET }))).route(
         "/api/chat",
         createChatRoute(() => capturing),
       ).fetch,

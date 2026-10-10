@@ -1,66 +1,104 @@
-# Phase 5 report: Agent Modes, Session Resumption & File Mentions
+# Phase 6 report: Browser-to-CLI OAuth & User Security
 
-Status: complete. PR [#54](https://github.com/paramcodes/brightbot/pull/54), CI green, awaiting merge.
+Status: complete. Awaiting merge.
 
-- Branch: `phase-5-modes-and-sessions`
-- Base: `033ee21` (`origin/master`, the feature-map fix, after Phase 4 merged)
-- Seven commits, each green in isolation through `tools/verify-commits.sh`
+- Branch: `phase-6-auth`
+- Base: `2bf4651` (the system-prompt fix, after Phase 5 merged)
+- Five commits, each green in isolation through `tools/verify-commits.sh`
 
 ## Commits
 
 | SHA | Subject |
 | --- | --- |
-| `22cc488` | `feat(cli): make plan and build mode live, with their prompts (#25)` |
-| `2b12604` | `feat(cli): let the pick the model, with pricing (#26)` |
-| `f24a38b` | `fix: let the chosen model name its provider, and default to a callable one` |
-| `5f35972` | `feat(cli): resume a saved session from the store (#27)` |
-| `da2ee58` | `feat(cli): mention a file with @ and pick it from what git tracks (#28)` |
-| `20b28bb` | `docs: name what phase 5 left behind` |
-| `7c8d6ea` | `docs: mark phase 5 shipped in the feature map` |
+| `0737697` | `docs: design phase 6, browser-to-cli oauth and user security` |
+| `1bdac1d` | `feat(cli): catch an OAuth callback on a loopback port with a PKCE pair (#30)` |
+| `8bdf54b` | `feat(server): issue and verify a local session token (#31)` |
+| `506aaef` | `feat(cli): sign in through the browser and keep the token on disk (#32)` |
+| `f12cf29` | `feat(server): scope every api call to the authenticated caller (#33)` |
 
 ## What was built
 
-**5.1 Modes.** `Preferences` already declared `mode` and `model` and `ConfigStore` already rewrote the whole file, so the phase wired the live values rather than adding new state. One `PreferencesProvider` owns theme, mode, and model behind one store instance, replacing `ThemeProvider` and its test. `mode` narrows from `string` to `"plan" | "build"` with a guard in `parsePreferences` shaped like `isThemeName`, so an unreadable file cannot put an unknown mode on screen. `tab` now toggles the mode, which is what the hint row has advertised since Phase 2 with nothing behind it.
+**6.1 The loopback and the PKCE pair.** `startLoopbackServer` binds `127.0.0.1` on port `0` and
+answers exactly one code. `createPkce` builds the S256 pair; the challenge goes in the URL and the
+verifier never leaves the process. The loopback is closed by an explicit `stop`, because closing it
+while the browser's page is still being written resets the connection and the user is left with a
+dead tab.
 
-The prompts live in `packages/shared/src/prompts/`, a directory the package's own description promised and did not have.
+**6.2 The two endpoints.** `GET /oauth/authorize` issues a single-use code and redirects to the
+loopback. `POST /oauth/token` spends that code with the verifier that answers its challenge. The
+code is bound to the redirect it was issued for, spendable exactly once, and only a loopback redirect
+is accepted, because this endpoint would otherwise be an open redirector handing out fresh codes.
+The token is an HMAC over a JSON payload, verified with a constant-time compare before the payload is
+parsed.
 
-**5.2 Models.** A closed catalog of six ids, each one the Phase 4 provider adapters can actually call, with per-million pricing. `/models` renders it through `DialogSearchList`, the one keyboard implementation every modal list already uses. The chosen model is written through to the session create, which matters because the route reads `session.model` to resolve the provider.
+**6.3 `nightcode login`.** Builds the pair, starts the port, opens the browser, spends the code. The
+token lands in `~/.nightcode/auth.json` at mode `0o600`, written atomically. `--url` prints the URL
+instead of opening a browser, which is what a machine with no browser needs.
 
-**5.3 Resume.** `Store` grows `listSessions` and `listMessages`, both reads and both outside the `serialize` chain, following `getSession`. `/sessions` opens a picker, and `resume()` hydrates the transcript by following `reset`'s shape exactly: abort, bump the generation ref, set both fields.
-
-**5.4 Mentions.** `@` filters the files git would track. The mechanism is the composer's own `onKeyDown`, which fires before the buffer edits, so `preventDefault` on it stops the composer acting on the key. The global keyboard listener runs first, so `useRootKeys` stands down for `escape` and `tab` while a mention is live.
+**6.4 The caller everywhere.** `requireAuth` reads the bearer token and puts the caller on the
+request context, so no route parses an `Authorization` header. The store takes the caller:
+`NewSession` carries `userId`, `listSessions(userId)` answers one caller's rows, and the reads of one
+session check ownership and answer `404` rather than `403`, so a caller learns nothing about a row
+that is not theirs.
 
 ## Decisions a reviewer should push on
 
-**`@` is not a modal.** Printable characters are dropped before the responder chain, so nothing in the chain can see an `@`, and a responder layer returning `true` does not stop the focused editor from acting on the key anyway. That second fact was measured, not assumed, and it is the reason the picker is not a `DialogSearchList`.
+**A tokenless request is the local user, not an error.** The plan's 6.4 rejects unauthenticated
+requests. Rejecting them under the local default would make the first prompt of a fresh checkout
+fail, which standing order 5 forbids, and the PTY harness that proves every commit would boot a CLI
+that cannot chat. The 401 path is real and proved for a configured provider, which answers `null`
+for a request with no token; the local provider answers with the local user. The distinction the
+middleware does make is between *no token* and *a presented token that is not one this server
+signed*, the second of which is always refused.
 
-**The listing does not sort.** `Session.updatedAt` is written once at create and never updated anywhere in the tree (there is no `session.update`), so ordering by it lists by creation time under a name that promises recency. `createdAt` is not unique either, because the file store writes millisecond ISO strings and two overlapping calls can land on the same value. The file store returns its array reversed, which is the truth, and the hydrated transcript preserves arrival order.
+**`nightcode login` is a command, not a mode.** A login is a browser round trip with a printed URL.
+Rendering a TUI to show "signed in" would be a surface that starts, does nothing, and exits.
 
-**No persisted reasoning.** The store's document schema is a plain `z.object`, so `.parse` strips a key it does not declare and the next `appendMessage` writes the file without it. A new `Message` field therefore needs a `version: 2` variant and a migration read, not an optional field. Phase 5 could have slipped reasoning in beside a dialog and did not.
+**The token has no expiry.** An expiring token with no refresh flow is a session that dies mid-turn
+with no way to recover it, and the plan does not ask for one.
 
-**`fast-glob` and `date-fns` were dropped.** `fast-glob` does not read `.gitignore`, so the plan's stack would still have needed a matcher. The scan walks with `Bun.Glob` and matches with the `ignore` package, whose negation, anchoring, and directory rules were each proved by probe. `Intl.RelativeTimeFormat` covers timestamps natively.
+**The default signing secret is a named development constant.** A server reachable by anyone else
+and holding no `NIGHTCODE_AUTH_SECRET` accepts a token anyone can forge. That is called out in the
+design doc and left behind for Phase 9, rather than hidden.
 
-**No new status bar.** `Header` already renders mode and model cells and `RootLayout` already receives them. A second status surface would be two ways to show one thing.
-
-## A tooling fix that will matter again
-
-`tools/verify-commits.sh` borrowed each package's `node_modules` as one directory link, and each of those symlinks `@nightcode/shared` back at the live `packages/shared`. Every worktree therefore typechecked against shared's latest source rather than the copy in the commit under test. That is why Phase 4's dependency bump had to be folded into its consumer, and why Phase 5's first three commits failed a clean verification run before the fix. The borrow is now per entry with workspace packages resolved to the worktree's own copy, so a widening breaks the commits after it and nothing else.
+**`listMessages` still takes only a session id.** Ownership is checked by the two routes that read a
+transcript rather than inside the store, which is a seam the next phase could close by moving the
+check into the port.
 
 ## Where the build deviated from the plan
 
-Four places, all recorded in `docs/phase-5-design.md`: one preferences context instead of the plan's two, no `StatusBar.tsx`, no `date-fns`, and `core/mention.ts` as a new module the plan did not name.
+Three places, all recorded in `docs/phase-6-design.md`: a tokenless request is the local user rather
+than a `401` under the local default, the Clerk adapter's URLs are built but no JWKS verifier is
+written (no Clerk instance exists on this machine), and no `/logout` command ships in this phase.
 
 ## Verification
 
-`tools/verify-commits.sh` green on all seven commits. `bun test packages` is 229 pass, 0 fail. Three real-terminal PTY drives cover the mode toggle, the model picker, the resume, and the `@` mention with an explicit caret assertion.
+`tools/verify-commits.sh` green on all five commits: typecheck, Biome, `bun test packages`, and a
+real-terminal boot per commit. `bun test packages` is 280 pass, 0 fail.
 
-The mutation proofs that matter: removing `preventDefault` from the `return` branch breaks three tests, removing the whitespace rule in `activeMention` breaks three more including the email-address case, and removing the caret restore breaks one test that only proves anything with text after the mention.
+One real-terminal drive of `nightcode login --url` in a pseudo-terminal, with a real `Bun.serve`
+server on port 0 and the browser leg driven by `curl` from outside the pty. The CLI printed the
+authorize URL, the loopback answered the callback with `200`, the token was written to
+`~/.nightcode/auth.json` at mode `600`, and the app exited `code=0`.
 
-Two defects the process caught that a unit test would have missed. The `tab`-flips-the-mode bug was found by a PTY drive and not by the harness, because the global listener runs before the input's own handler. The mode assertion passing in the checkout and hanging in the worktree is the same header-truncation trap Phase 4 hit, which is why `Header`'s cells are now never asserted at the default viewport.
+Four mutations each break a named test: dropping the `system` field, making `listSessions` ignore the
+caller, removing the ownership check from the routes, and making the middleware name no caller.
+
+Two defects the process caught that a unit test would have missed. The loopback server closed the
+connection before the browser's page finished writing, which `Bun.serve`'s synchronous
+`server.stop(true)` in the request handler causes; the fix is an explicit `stop` in a `finally`. The
+`Authorization` header merge dropped the request body, because a `Headers` instance has no
+enumerable own properties and spreading one into an object literal writes nothing.
 
 ## Open risks
 
-- `systemPrompt` is exported and unreferenced. `ChatRequest` has no system field, so the mode changes nothing the model is told. Phase 6's first seam.
-- The file scan is synchronous inside an async function, bounded by the skip list rather than by an await. A huge non-ignored directory is the case to measure.
-- Prices are a snapshot read from both providers' pricing pages on 2026-10-10 at standard tier, with cache and batch rates not modelled.
-- `MODEL_IDS` and the catalog's `provider` field have no consumer yet.
+- A deployed server with no `NIGHTCODE_AUTH_SECRET` accepts forged tokens. Phase 9 refuses to boot in
+  that state.
+- The Clerk adapter is selected and its URLs are built, but no JWKS verifier exists. The 401 path is
+  proved by a provider that refuses, not by a live Clerk login.
+- The authorize code lives in process memory, so a server restart invalidates a login halfway
+  through the browser round trip.
+- No `/logout`. The token is deleted by removing `~/.nightcode/auth.json`.
+- `noodle/`, an untracked directory the operator created in this checkout during the phase, moved
+  the answer to "which file is third" in the mention picker. The tests now read the highlighted row
+  off the screen instead of assuming, so the scan's contents no longer decide whether they pass.

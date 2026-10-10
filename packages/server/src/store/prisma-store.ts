@@ -1,6 +1,6 @@
-import type { Message, NewMessage, NewSession, Session, Store } from "@nightcode/shared"
+import type { AuthUser, Message, NewMessage, NewSession, Session, Store, User } from "@nightcode/shared"
 import { createPrismaClient } from "../lib/db.js"
-import { LOCAL_USER_EMAIL, LOCAL_USER_ID, type MessageRow, type PrismaDatabase, type SessionRow } from "./types.js"
+import type { MessageRow, PrismaDatabase, SessionRow, UserRow } from "./types.js"
 
 /**
  * The same port, backed by Postgres. Constructed only when `DATABASE_URL` is present, so nothing
@@ -12,15 +12,21 @@ import { LOCAL_USER_EMAIL, LOCAL_USER_ID, type MessageRow, type PrismaDatabase, 
 export class PrismaStore implements Store {
   constructor(private readonly db: PrismaDatabase) {}
 
-  async createSession(input: NewSession): Promise<Session> {
+  async ensureUser(user: AuthUser): Promise<User> {
     const now = new Date()
-    await this.db.user.upsert({
-      where: { id: LOCAL_USER_ID },
+    const row = await this.db.user.upsert({
+      where: { id: user.id },
       update: {},
-      create: { id: LOCAL_USER_ID, email: LOCAL_USER_EMAIL, createdAt: now, updatedAt: now },
+      create: { id: user.id, email: user.email, createdAt: now, updatedAt: now },
     })
+    return toUser(row)
+  }
+
+  async createSession(input: NewSession): Promise<Session> {
+    // `ensureUser` is the route's job, because a session for a caller who has never been seen is a
+    // foreign key waiting to fail. This writes the row it was given and nothing else.
     const row = await this.db.session.create({
-      data: { id: crypto.randomUUID(), userId: LOCAL_USER_ID, title: input.title, model: input.model },
+      data: { id: crypto.randomUUID(), userId: input.userId, title: input.title, model: input.model },
     })
     return toSession(row)
   }
@@ -30,8 +36,8 @@ export class PrismaStore implements Store {
     return row === null ? null : toSession(row)
   }
 
-  async listSessions(): Promise<Session[]> {
-    const rows = await this.db.session.findMany({ orderBy: { createdAt: "desc" } })
+  async listSessions(userId: string): Promise<Session[]> {
+    const rows = await this.db.session.findMany({ where: { userId }, orderBy: { createdAt: "desc" } })
     return rows.map(toSession)
   }
 
@@ -56,6 +62,15 @@ export class PrismaStore implements Store {
 
 export async function prismaStore(): Promise<Store> {
   return new PrismaStore(await createPrismaClient())
+}
+
+function toUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
 }
 
 function toSession(row: SessionRow): Session {
