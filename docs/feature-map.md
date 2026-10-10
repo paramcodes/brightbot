@@ -10,7 +10,7 @@ sub-issue per commit. Update a phase with `bun run tools/feature-map.ts --phase 
 | 3. Backend Infrastructure, Database & Observability | Hono server, Prisma schema, RPC client types, Sentry middleware, file-backed default store. | 3.1, 3.2, 3.3, 3.4 | shipped | #14 |
 | 4. Real-Time AI Chat Engine & Interruption Flow | SSE streaming endpoint, message rendering, optimistic transitions, abort via Esc. | 4.1, 4.2, 4.3, 4.4 | shipped | #19 |
 | 5. Agent Modes, Session Resumption & File Mentions | Plan vs Build mode, model picker, session history, @ file mentions. | 5.1, 5.2, 5.3, 5.4 | shipped | #24 |
-| 6. Browser-to-CLI OAuth & User Security | PKCE, loopback server, browser login, restricted credential store, server-side auth. | 6.1, 6.2, 6.3, 6.4 | planned | #29 |
+| 6. Browser-to-CLI OAuth & User Security | PKCE, loopback server, browser login, restricted credential store, server-side auth. | 6.1, 6.2, 6.3, 6.4 | shipped | #29 |
 | 7. SaaS Monetization, Credit Metering & Rate Limiting | Credit ledger, gating middleware, token ingestion, `/usage` and `/upgrade` dialogs. | 7.1, 7.2, 7.3, 7.4 | planned | #34 |
 | 8. Client-Side Tool Execution Engine | Shared tool schemas, local executors, client-side tool loop, confirmation, grouped rendering. | 8.1, 8.2, 8.3, 8.4, 8.5 | planned | #39 |
 | 9. Distribution, Packaging & Production Polish | Binary entry point, container deploy config, AI review config, clean exit traps, live demo. | 9.1, 9.2, 9.3, 9.4 | planned | #45 |
