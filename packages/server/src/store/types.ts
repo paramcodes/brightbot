@@ -1,4 +1,4 @@
-import type { Message, MessageStatus, Role, Session, TokenUsage, User } from "@nightcode/shared"
+import type { Message, MessageStatus, Role, Session, User } from "@nightcode/shared"
 
 /** Which implementation `createStore` picked, decided purely from the environment. */
 export type StoreKind = "file" | "prisma"
@@ -14,7 +14,6 @@ export interface StoreDocument {
   users: User[]
   sessions: Session[]
   messages: Message[]
-  tokenUsage: TokenUsage[]
 }
 
 /**
@@ -80,7 +79,6 @@ export const EMPTY_DOCUMENT: StoreDocument = {
   users: [],
   sessions: [],
   messages: [],
-  tokenUsage: [],
 }
 
 /**

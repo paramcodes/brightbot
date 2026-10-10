@@ -17,3 +17,4 @@ export function pathInNightcodeHome(...segments: string[]): string {
 export const PREFERENCES_PATH = () => pathInNightcodeHome("preferences.json")
 export const AUTH_PATH = () => pathInNightcodeHome("auth.json")
 export const STORE_PATH = () => pathInNightcodeHome("store.json")
+export const CREDITS_PATH = () => pathInNightcodeHome("credits.json")

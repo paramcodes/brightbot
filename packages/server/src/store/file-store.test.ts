@@ -67,7 +67,6 @@ describe("file store", () => {
       },
     ])
     expect(document.messages).toEqual([])
-    expect(document.tokenUsage).toEqual([])
   })
 
   test("a corrupt store file reads as empty instead of crashing", async () => {
@@ -147,10 +146,7 @@ describe("file store", () => {
         updatedAt: "2026-10-10T00:00:00.000Z",
       },
     ]
-    writeFileSync(
-      join(home, "store.json"),
-      `${JSON.stringify({ version: 1, users: [], sessions: written, messages: [], tokenUsage: [] })}\n`,
-    )
+    writeFileSync(join(home, "store.json"), `${JSON.stringify({ version: 1, users: [], sessions: written, messages: [] })}\n`)
 
     expect((await new FileStore().listSessions(OWNER.id)).map((session) => session.title)).toEqual(["Written second", "Written first"])
   })

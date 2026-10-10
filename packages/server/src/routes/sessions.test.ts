@@ -161,7 +161,6 @@ describe("caller scoping", () => {
           },
         ],
         messages: [],
-        tokenUsage: [],
       })}\n`,
     )
 
