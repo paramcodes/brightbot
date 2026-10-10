@@ -2,6 +2,8 @@ import type { ApiErrorBody, ChatFrame, ChatRequest, Message, NewSession, Session
 import { chatFrameSchema } from "@nightcode/shared"
 import { hc } from "hono/client"
 import type { AppType } from "../../../server/src/app.js"
+import { authorizationHeader } from "../auth/identity.js"
+import { openTokenStore } from "../auth/token-storage.js"
 import type { ChatTransport } from "../core/chat/transport.js"
 
 /**
@@ -16,9 +18,37 @@ import type { ChatTransport } from "../core/chat/transport.js"
  * hand the first importer's port to every later importer, and a test that boots its own server could
  * not point the shared module at it.
  */
+/**
+ * The one token store the client reads, opened once per process.
+ *
+ * The base URL is resolved per request, so a test that boots its own server can point this at it. The
+ * token is read per request for the same reason: a sign-out in another terminal, or a token that stops
+ * being accepted, is reflected on the next call rather than surviving until restart.
+ */
+const tokenStore = openTokenStore()
+
 export const apiClient = hc<AppType>("", {
-  fetch: ((path: string | URL, init?: RequestInit) => fetch(`${baseUrl()}${path}`, init)) as unknown as typeof fetch,
+  fetch: ((path: string | URL, init?: RequestInit) =>
+    fetch(`${baseUrl()}${path}`, {
+      ...init,
+      // Merged onto a plain object rather than passed as `Headers`, because `new Headers(instance)`
+      // has no enumerable own properties and spreading one into an object literal writes nothing.
+      headers: { ...authorizationHeader(tokenStore), ...plainHeaders(init) },
+    })) as unknown as typeof fetch,
 })
+
+function plainHeaders(init: RequestInit | undefined): Record<string, string> {
+  const headers = init?.headers
+  if (headers === undefined) return {}
+  // A `Headers` instance is iterated, because the callers that set one have already lost the shape it
+  // came from and iteration is the only accessor that sees every entry.
+  if (typeof (headers as Headers).forEach === "function" && !Array.isArray(headers)) {
+    const merged: Record<string, string> = {}
+    for (const [key, value] of headers as Headers) merged[key] = value
+    return merged
+  }
+  return headers as Record<string, string>
+}
 
 function baseUrl(): string {
   return process.env.NIGHTCODE_SERVER_URL ?? "http://localhost:3000"

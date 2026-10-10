@@ -1,9 +1,11 @@
-import type { ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
+import type { AuthUser, ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
 import type { ChatTransport } from "../src/core/chat/transport.js"
+
+export const SCRIPTED_USER: AuthUser = { id: "user-local", email: "local@nightcode.dev" }
 
 export const SCRIPTED_SESSION: Session = {
   id: "session-scripted",
-  userId: "user-local",
+  userId: SCRIPTED_USER.id,
   title: "Scripted",
   model: "claude-3-5-sonnet",
   createdAt: "2026-01-01T00:00:00.000Z",

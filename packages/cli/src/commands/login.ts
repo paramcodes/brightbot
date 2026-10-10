@@ -9,7 +9,7 @@ import { openTokenStore } from "../auth/token-storage.js"
  * The flow is the same one the browser drives, so this command owns only the parts the shell owns:
  * which token store is written, which browser opener is used, and what the exit code says.
  */
-export async function loginCommand(options: { url?: string } = {}): Promise<number> {
+export async function loginCommand(options: { printUrl?: boolean } = {}): Promise<number> {
   const store = openTokenStore()
   const print = (line: string): void => {
     process.stdout.write(`${line}\n`)
@@ -38,9 +38,9 @@ export async function loginCommand(options: { url?: string } = {}): Promise<numb
  * browser gets the URL on its own stream, because a login that hangs on a missing browser is a login
  * that looks broken rather than one that needs a manual step.
  */
-function openBrowser(url: string, options: { url?: string }): void {
-  if (options.url !== undefined) {
-    process.stdout.write(`Open this URL to sign in:\n${options.url}\n`)
+function openBrowser(url: string, options: { printUrl?: boolean }): void {
+  if (options.printUrl === true) {
+    process.stdout.write(`Open this URL to sign in:\n${url}\n`)
     return
   }
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open"

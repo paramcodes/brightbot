@@ -10,6 +10,10 @@ import type { ChatFrame, ChatRequest, Message, NewSession, Session } from "@nigh
  * turn cannot be answered without a session, so a transport that could not open one would be a
  * half-truth about what the CLI can do. The two reads are here for the same reason: a hook that
  * imported the api client directly would drag a server into every hook test.
+ *
+ * The shapes are the port's own, so the client sends exactly what the store reads. `NewSession` carries
+ * the caller's id because the store records who opened a session rather than allocating an owner, and
+ * the CLI reads that id from its own token at the boundary.
  */
 export interface ChatTransport {
   createSession(input: NewSession): Promise<Session>

@@ -7,6 +7,7 @@ import { streamSSE } from "hono/streaming"
 import { z } from "zod"
 import { type Model, type ModelEvent, resolveModel, toFrame } from "../lib/ai.js"
 import { reportError } from "../lib/sentry.js"
+import { caller } from "../middleware/auth.js"
 import { ApiError, errorResponse } from "../middleware/error-handler.js"
 import { createStore } from "../store/index.js"
 
@@ -130,7 +131,10 @@ export function createChatRoute(selectModel: (model: string) => Model = (model) 
       const body: ChatRequest = c.req.valid("json")
       const store = await createStore()
       const session = await store.getSession(body.sessionId)
-      if (!session) throw new ApiError(404, `No session with id ${body.sessionId}`)
+      const user = caller(c)
+      // A session that belongs to another caller is not there, which is the same answer an unknown id
+      // gets. A caller should learn nothing about a row that is not theirs, not even that it exists.
+      if (!session || user === null || session.userId !== user.id) throw new ApiError(404, `No session with id ${body.sessionId}`)
       const turn = body.messages.at(-1)
       if (!turn) throw new ApiError(400, "The last message must come from the user")
 

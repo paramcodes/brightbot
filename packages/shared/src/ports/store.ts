@@ -8,6 +8,8 @@
  * Every timestamp is an ISO string. The file store writes what it is given; the Prisma store converts
  * `DateTime` columns at its own edge. A caller cannot tell which backend answered.
  */
+import type { AuthUser } from "./auth.js"
+
 export interface User {
   id: string
   email: string
@@ -60,24 +62,30 @@ export interface TokenUsage {
 /**
  * What a caller hands the store to open a session.
  *
- * Identity stays inside the store on purpose: no route signature grows a `userId` only to have
- * Phase 6 take it away again when real auth lands.
+ * The caller's own id travels with it, so the row records who opened it rather than who the store
+ * felt like allocating. Phase 6 is the phase that gives every session an owner.
  */
-export type NewSession = Pick<Session, "title" | "model">
+export type NewSession = Pick<Session, "title" | "model"> & { readonly userId: string }
 
 /** What a caller hands the store to record one finished turn. */
 export type NewMessage = Pick<Message, "sessionId" | "role" | "content" | "status">
 
 /**
- * The persistence port. Only the operations the Phase 3 routes call, so widening it is a deliberate
- * edit rather than an unused method that rots.
+ * The persistence port. Only the operations the routes call, so widening it is a deliberate edit
+ * rather than an unused method that rots.
+ *
+ * The reads take the caller's id, because the question "which sessions are there" has only one honest
+ * answer per caller. A listing that returns every row in the document is a listing that answers a
+ * question nobody should be able to ask.
  */
 export interface Store {
+  /** Makes the caller's own row exist, so a session can point at it and the foreign key holds. */
+  ensureUser(user: AuthUser): Promise<User>
   createSession(input: NewSession): Promise<Session>
   getSession(id: string): Promise<Session | null>
   appendMessage(input: NewMessage): Promise<Message>
   /** Newest first. Both implementations answer in that order, and neither sorts by a timestamp. */
-  listSessions(): Promise<Session[]>
+  listSessions(userId: string): Promise<Session[]>
   /** One session's transcript in arrival order, and never another session's rows. */
   listMessages(sessionId: string): Promise<Message[]>
 }

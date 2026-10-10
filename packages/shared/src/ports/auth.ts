@@ -32,6 +32,15 @@ export const authUserSchema = z.object({
 export type AuthUser = z.infer<typeof authUserSchema>
 
 /**
+ * The caller that needs no credential at all: one operator on their own machine.
+ *
+ * It is defined here rather than in the server because both ends need it. The CLI sends this identity
+ * when it holds no token, and the server's local provider answers with it for a request that carries
+ * none, so the two agree on who the local caller is without either importing the other.
+ */
+export const LOCAL_USER: AuthUser = { id: "local", email: "local@nightcode.dev" }
+
+/**
  * What the CLI keeps on disk and sends on every request.
  *
  * `expiresAt` is null rather than omitted because a token with no expiry and a token with an unknown

@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
-import type { AuthUser, ExchangeInput } from "@nightcode/shared"
+import type { ExchangeInput } from "@nightcode/shared"
 import { ApiError } from "../middleware/error-handler.js"
 
 /**
@@ -113,9 +113,6 @@ export class AuthorizationCodes {
 export function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url")
 }
-
-/** The user every local token belongs to: one operator, one identity, no credentials to check. */
-export const LOCAL_USER: AuthUser = { id: "local", email: "local@nightcode.dev" }
 
 /**
  * A refusal an auth route raises, so it lands in the API's own envelope like every other one.

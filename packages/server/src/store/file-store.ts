@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { Message, NewMessage, NewSession, Session, Store } from "@nightcode/shared"
+import type { AuthUser, Message, NewMessage, NewSession, Session, Store, User } from "@nightcode/shared"
 import { MESSAGE_STATUSES, ROLES, STORE_PATH } from "@nightcode/shared"
 import { z } from "zod"
-import { EMPTY_DOCUMENT, LOCAL_USER_EMAIL, LOCAL_USER_ID, type StoreDocument } from "./types.js"
+import { EMPTY_DOCUMENT, type StoreDocument } from "./types.js"
 
 const timestamp = z.string().datetime()
 
@@ -80,14 +80,28 @@ export class FileStore implements Store {
     return run
   }
 
+  async ensureUser(user: AuthUser): Promise<User> {
+    return this.serialize(() => {
+      const document = this.read()
+      const now = new Date().toISOString()
+      const existing = document.users.find((candidate) => candidate.id === user.id)
+      if (existing) return existing
+      const row: User = { id: user.id, email: user.email, createdAt: now, updatedAt: now }
+      document.users.push(row)
+      this.write(document)
+      return row
+    })
+  }
+
   async createSession(input: NewSession): Promise<Session> {
     return this.serialize(() => {
       const document = this.read()
       const now = new Date().toISOString()
-      this.ensureLocalUser(document, now)
+      // The caller's own id, not a value this store allocates. A session belongs to whoever asked for
+      // it, and `ensureUser` has already put their row in the document so the reference holds.
       const session: Session = {
         id: randomUUID(),
-        userId: LOCAL_USER_ID,
+        userId: input.userId,
         title: input.title,
         model: input.model,
         createdAt: now,
@@ -104,16 +118,19 @@ export class FileStore implements Store {
   }
 
   /**
-   * The file's own array order, reversed.
+   * The file's own array order, reversed, scoped to one caller.
    *
    * Nothing here sorts, and the next reader must not "fix" it into one. `updatedAt` is written once at
    * create and never updated anywhere in the tree, so ordering by it is ordering by creation time under
    * a name that promises recency. `createdAt` is not unique either, because it is a millisecond ISO
    * string and two overlapping calls land on the same value, so a sort on it can swap two rows. The
    * array order is what the writes actually did, and its reverse is the truth.
+   *
+   * The filter is the same truth for the caller: a listing answers with this caller's rows and nothing
+   * else, so a row that belongs to someone else is not in the answer rather than being hidden later.
    */
-  async listSessions(): Promise<Session[]> {
-    return [...this.read().sessions].reverse()
+  async listSessions(userId: string): Promise<Session[]> {
+    return [...this.read().sessions].reverse().filter((session) => session.userId === userId)
   }
 
   /**
@@ -141,16 +158,6 @@ export class FileStore implements Store {
       document.messages.push(message)
       this.write(document)
       return message
-    })
-  }
-
-  private ensureLocalUser(document: StoreDocument, now: string): void {
-    if (document.users.some((user) => user.id === LOCAL_USER_ID)) return
-    document.users.push({
-      id: LOCAL_USER_ID,
-      email: LOCAL_USER_EMAIL,
-      createdAt: now,
-      updatedAt: now,
     })
   }
 

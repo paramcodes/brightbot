@@ -2,11 +2,20 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import type { AuthUser } from "@nightcode/shared"
 import { NIGHTCODE_HOME_ENV } from "@nightcode/shared"
 import { FileStore } from "./file-store.js"
 
 const originalHome = process.env[NIGHTCODE_HOME_ENV]
 let home = ""
+
+/** Who the store sees as its caller. Every session is written for one of these two. */
+const OWNER: AuthUser = { id: "local", email: "local@nightcode.dev" }
+const SOMEBODY_ELSE: AuthUser = { id: "someone-else", email: "someone@example.com" }
+
+function createAs(user: AuthUser, title: string, model = "m") {
+  return new FileStore().createSession({ title, model, userId: user.id })
+}
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "nightcode-store-test-"))
@@ -22,7 +31,7 @@ afterEach(() => {
 describe("file store", () => {
   test("a session written by one instance is readable by a fresh one", async () => {
     const first = new FileStore()
-    const created = await first.createSession({ title: "Restart me", model: "claude-sonnet-5" })
+    const created = await first.createSession({ title: "Restart me", model: "claude-sonnet-5", userId: OWNER.id })
 
     const second = new FileStore()
     const readBack = await second.getSession(created.id)
@@ -33,7 +42,8 @@ describe("file store", () => {
 
   test("the store file holds both the session and its owner", async () => {
     const store = new FileStore()
-    await store.createSession({ title: "Inspect me", model: "claude-sonnet-5" })
+    await store.createSession({ title: "Inspect me", model: "claude-sonnet-5", userId: OWNER.id })
+    await store.ensureUser(OWNER)
 
     const document = JSON.parse(readFileSync(join(home, "store.json"), "utf8")) as Record<string, unknown>
 
@@ -69,9 +79,8 @@ describe("file store", () => {
   })
 
   test("two sessions written in sequence both survive a fresh instance", async () => {
-    const first = new FileStore()
-    const one = await first.createSession({ title: "One", model: "m" })
-    const two = await first.createSession({ title: "Two", model: "m" })
+    const one = await createAs(OWNER, "One")
+    const two = await createAs(OWNER, "Two")
 
     const fresh = new FileStore()
     expect(await fresh.getSession(one.id)).toEqual(one)
@@ -80,7 +89,7 @@ describe("file store", () => {
 
   test("an appended message is written with its status and survives a fresh instance", async () => {
     const store = new FileStore()
-    const session = await store.createSession({ title: "Chat", model: "m" })
+    const session = await createAs(OWNER, "Chat")
 
     const message = await store.appendMessage({
       sessionId: session.id,
@@ -104,16 +113,16 @@ describe("file store", () => {
   })
 
   test("listSessions on a store that holds nothing lists empty", async () => {
-    expect(await new FileStore().listSessions()).toEqual([])
+    expect(await new FileStore().listSessions(OWNER.id)).toEqual([])
   })
 
   test("listSessions is newest first, which is the file's own order reversed", async () => {
     const store = new FileStore()
-    const one = await store.createSession({ title: "Written first", model: "m" })
-    const two = await store.createSession({ title: "Written second", model: "m" })
-    const three = await store.createSession({ title: "Written third", model: "m" })
+    const one = await createAs(OWNER, "Written first")
+    const two = await createAs(OWNER, "Written second")
+    const three = await createAs(OWNER, "Written third")
 
-    expect(await store.listSessions()).toEqual([three, two, one])
+    expect(await store.listSessions(OWNER.id)).toEqual([three, two, one])
   })
 
   test("listSessions is newest first even when every timestamp is the same value", async () => {
@@ -143,28 +152,28 @@ describe("file store", () => {
       `${JSON.stringify({ version: 1, users: [], sessions: written, messages: [], tokenUsage: [] })}\n`,
     )
 
-    expect((await new FileStore().listSessions()).map((session) => session.title)).toEqual(["Written second", "Written first"])
+    expect((await new FileStore().listSessions(OWNER.id)).map((session) => session.title)).toEqual(["Written second", "Written first"])
   })
 
   test("a read is not queued behind a write still in the chain", async () => {
     const store = new FileStore()
-    const first = await store.createSession({ title: "First", model: "m" })
+    const first = await createAs(OWNER, "First")
 
     // `createSession` defers its own read-modify-write to a microtask, and an async function body runs
     // synchronously to its first await, so this read strictly precedes that write. A `listSessions` that
     // took `serialize` would queue behind it and see the second session.
-    const writing = store.createSession({ title: "Second", model: "m" })
-    const listed = await store.listSessions()
+    const writing = createAs(OWNER, "Second")
+    const listed = await store.listSessions(OWNER.id)
     await writing
 
     expect(listed).toEqual([first])
-    expect(await store.listSessions()).toEqual([await writing, first])
+    expect(await store.listSessions(OWNER.id)).toEqual([await writing, first])
   })
 
   test("listMessages returns one session's transcript in arrival order", async () => {
     const store = new FileStore()
-    const asked = await store.createSession({ title: "Asked", model: "m" })
-    const other = await store.createSession({ title: "Other", model: "m" })
+    const asked = await createAs(OWNER, "Asked")
+    const other = await createAs(SOMEBODY_ELSE, "Other")
     const first = await store.appendMessage({ sessionId: asked.id, role: "user", content: "first", status: "complete" })
     await store.appendMessage({ sessionId: other.id, role: "user", content: "never leaked", status: "complete" })
     const second = await store.appendMessage({
@@ -181,7 +190,7 @@ describe("file store", () => {
 
   test("two overlapping appends both land", async () => {
     const store = new FileStore()
-    const session = await store.createSession({ title: "Chat", model: "m" })
+    const session = await createAs(OWNER, "Chat")
 
     const first = store.appendMessage({ sessionId: session.id, role: "user", content: "one", status: "complete" })
     const second = store.appendMessage({
@@ -205,7 +214,7 @@ describe("file store", () => {
 
   test("a rejected write leaves the queue draining instead of wedging it", async () => {
     const store = new FileStore()
-    const session = await store.createSession({ title: "Chat", model: "m" })
+    const session = await createAs(OWNER, "Chat")
     // A file where the store's directory belongs makes the write's `mkdirSync` throw.
     rmSync(home, { recursive: true, force: true })
     writeFileSync(home, "not a directory")

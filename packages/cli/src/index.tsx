@@ -9,9 +9,13 @@ import { createAppRenderer } from "./core/renderer.js"
  *
  * A login is a browser round trip with a printed URL, so it belongs to the shell the user already has.
  * Rendering a TUI to show "signed in" would be a surface that starts, does nothing, and exits.
+ *
+ * `--url` prints the authorize URL and leaves the opening to the user, which is the one flag a machine
+ * with no browser, a demo recording, or a verification drive actually needs.
  */
-if (process.argv[2] === "login") {
-  process.exitCode = await loginCommand()
+const [command, ...rest] = process.argv.slice(2)
+if (command === "login") {
+  process.exitCode = await loginCommand({ printUrl: rest.includes("--url") })
 } else {
   const renderer = await createAppRenderer()
   createRoot(renderer).render(<App />)

@@ -31,7 +31,7 @@ describe("the process store", () => {
       const store = await createStore()
       expect(store).toBeInstanceOf(FileStore)
       expect(store).not.toBeInstanceOf(PrismaStore)
-      const session = await store.createSession({ title: "Selected by the environment", model: "m" })
+      const session = await store.createSession({ title: "Selected by the environment", model: "m", userId: "local" })
       expect(session.userId).toBe("local")
       expect(await Bun.file(join(home, "store.json")).exists()).toBe(true)
     } finally {
@@ -46,7 +46,7 @@ describe("the process store", () => {
 
 describe("the prisma store", () => {
   /** What the store handed the database, so a test reads the listing's own contract and not a guess. */
-  type FindManyCall = { orderBy?: { createdAt: "asc" | "desc" }; where?: { sessionId: string } }
+  type FindManyCall = { orderBy?: { createdAt: "asc" | "desc" }; where?: { sessionId?: string; userId?: string } }
 
   function fakeDatabase(): PrismaDatabase & {
     rows: SessionRow[]
@@ -87,7 +87,11 @@ describe("the prisma store", () => {
         findUnique: async (input) => rows.find((row) => row.id === input.where.id) ?? null,
         findMany: async (input) => {
           sessionFindMany.push(input ?? {})
-          return [...rows].sort((one, two) => two.createdAt.getTime() - one.createdAt.getTime())
+          // Only the caller's rows, which is what the store asks for. A `where` with no `userId` is
+          // the unscoped read, which no route makes but the type allows.
+          const wanted = input?.where?.userId
+          const scoped = wanted === undefined ? rows : rows.filter((row) => row.userId === wanted)
+          return [...scoped].sort((one, two) => two.createdAt.getTime() - one.createdAt.getTime())
         },
       },
       message: {
@@ -116,7 +120,7 @@ describe("the prisma store", () => {
   test("a created session comes back with ISO strings, matching the port's shape", async () => {
     const store = new PrismaStore(fakeDatabase())
 
-    const created = await store.createSession({ title: "Through Postgres", model: "claude-sonnet-5" })
+    const created = await store.createSession({ title: "Through Postgres", model: "claude-sonnet-5", userId: "local" })
     expect(created).toEqual({
       id: expect.any(String),
       userId: "local",
@@ -137,7 +141,7 @@ describe("the prisma store", () => {
   test("an appended message comes back with ISO strings and its own id", async () => {
     const database = fakeDatabase()
     const store = new PrismaStore(database)
-    const session = await store.createSession({ title: "Through Postgres", model: "claude-sonnet-5" })
+    const session = await store.createSession({ title: "Through Postgres", model: "claude-sonnet-5", userId: "local" })
 
     const message = await store.appendMessage({
       sessionId: session.id,
@@ -167,21 +171,22 @@ describe("the prisma store", () => {
   test("listSessions asks for newest first and maps every row through the port's shape", async () => {
     const database = fakeDatabase()
     const store = new PrismaStore(database)
-    const first = await store.createSession({ title: "First", model: "claude-sonnet-5" })
-    const second = await store.createSession({ title: "Second", model: "gpt-5" })
+    const first = await store.createSession({ title: "First", model: "claude-sonnet-5", userId: "local" })
+    const second = await store.createSession({ title: "Second", model: "gpt-5", userId: "local" })
 
-    expect(await store.listSessions()).toEqual([
+    expect(await store.listSessions("local")).toEqual([
       { ...second, createdAt: "2026-10-09T00:00:01.000Z", updatedAt: "2026-10-09T00:00:01.000Z" },
       { ...first, createdAt: "2026-10-09T00:00:00.000Z", updatedAt: "2026-10-09T00:00:00.000Z" },
     ])
-    expect(database.sessionFindMany).toEqual([{ orderBy: { createdAt: "desc" } }])
+    // The store passes the caller's id down, which is the one fact that makes the listing scoped.
+    expect(database.sessionFindMany).toEqual([{ where: { userId: "local" }, orderBy: { createdAt: "desc" } }])
   })
 
   test("listMessages asks for one session's rows in arrival order, and returns none for another's", async () => {
     const database = fakeDatabase()
     const store = new PrismaStore(database)
-    const one = await store.createSession({ title: "One", model: "claude-sonnet-5" })
-    const two = await store.createSession({ title: "Two", model: "claude-sonnet-5" })
+    const one = await store.createSession({ title: "One", model: "claude-sonnet-5", userId: "local" })
+    const two = await store.createSession({ title: "Two", model: "claude-sonnet-5", userId: "local" })
     const early = await store.appendMessage({ sessionId: one.id, role: "user", content: "first", status: "complete" })
     await store.appendMessage({ sessionId: two.id, role: "user", content: "not mine", status: "complete" })
     const late = await store.appendMessage({ sessionId: one.id, role: "assistant", content: "second", status: "complete" })

@@ -1,14 +1,5 @@
-import type { AuthSession, AuthUser, ExchangeInput } from "@nightcode/shared"
-import { verifierMatches } from "@nightcode/shared"
-import {
-  AuthError,
-  AuthorizationCodes,
-  createTokenSigner,
-  isExpired,
-  issueAuthorizationCode,
-  LOCAL_USER,
-  type TokenClaims,
-} from "./token.js"
+import { type AuthSession, type AuthUser, type ExchangeInput, LOCAL_USER, verifierMatches } from "@nightcode/shared"
+import { AuthError, AuthorizationCodes, createTokenSigner, isExpired, issueAuthorizationCode, type TokenClaims } from "./token.js"
 
 /**
  * The local identity provider: the default, and the one that runs with no credentials at all.
@@ -27,8 +18,13 @@ export interface AuthProvider {
   authorize(input: { redirectUri: string; state: string; challenge: string }): AuthorizeDecision
   /** Spends a code and a verifier, and hands back the session the CLI keeps. */
   exchange(input: ExchangeInput): AuthSession
-  /** Who a bearer token belongs to, or null when it is not a token this server issued. */
-  verify(token: string): AuthUser | null
+  /**
+   * Who a bearer token belongs to, or null when the request is not allowed through.
+   *
+   * The token is nullable rather than a string, because "this request carries no token at all" is a
+   * different question from "this token is not one we issued" and the two have different answers.
+   */
+  verify(token: string | null): AuthUser | null
 }
 
 export interface LocalAuthOptions {
@@ -84,6 +80,10 @@ export function localAuthProvider(options: LocalAuthOptions = {}): AuthProvider 
       return { token, user: LOCAL_USER, expiresAt: null }
     },
     verify(token) {
+      // No token at all is the local default's own caller, because the whole local default runs with
+      // no credentials and `bun run dev` has to answer a prompt. A configured provider answers null
+      // here, which is the 401 path.
+      if (token === null || token.length === 0) return LOCAL_USER
       const claims: TokenClaims | null = signer.verify(token)
       if (!claims) return null
       if (claims.sub !== LOCAL_USER.id) return null

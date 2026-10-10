@@ -175,6 +175,12 @@ describe("GET /oauth/authorize", () => {
 })
 
 describe("token verification", () => {
+  test("a request with no token is the local user, because the local default runs with no credentials", () => {
+    const provider = localAuthProvider({ secret: "the-test-secret" })
+    expect(provider.verify(null)).toEqual({ id: "local", email: "local@nightcode.dev" })
+    expect(provider.verify("")).toEqual({ id: "local", email: "local@nightcode.dev" })
+  })
+
   test("a token signed with another secret is not one this server issued", () => {
     const mine = localAuthProvider({ secret: "the-test-secret" })
     const theirs = localAuthProvider({ secret: "some-other-secret" })
@@ -190,9 +196,10 @@ describe("token verification", () => {
     expect(mine.verify(token)).toBeNull()
   })
 
-  test("a string that is not a token at all is not verified", () => {
+  test("a token that is presented but is not a token at all is refused", () => {
     const provider = localAuthProvider({ secret: "the-test-secret" })
-    expect(provider.verify("")).toBeNull()
+    // The distinction that matters: no token is the local caller, and a token that is not one this
+    // server signed is refused. An empty header and a malformed one are not the same thing.
     expect(provider.verify("nonsense")).toBeNull()
     expect(provider.verify("a.b.c")).toBeNull()
   })
