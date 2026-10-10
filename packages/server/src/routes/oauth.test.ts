@@ -62,7 +62,7 @@ describe("POST /oauth/token, over a real authorize round trip", () => {
     expect(issued.code.length).toBeGreaterThan(0)
     expect(issued.state).toBe(state)
 
-    const response = await token(app, { code: issued.code, verifier: pkce.verifier, redirect_uri: REDIRECT_URI })
+    const response = await token(app, { code: issued.code, code_verifier: pkce.verifier, redirect_uri: REDIRECT_URI })
     expect(response.status).toBe(200)
     const session = (await response.json()) as SessionBody
     expect(session.user).toEqual({ id: "local", email: "local@nightcode.dev" })
@@ -83,8 +83,8 @@ describe("POST /oauth/token, over a real authorize round trip", () => {
       await authorize(app, { redirect_uri: REDIRECT_URI, state, code_challenge: pkce.challenge, code_challenge_method: "S256" }),
     )
 
-    expect((await token(app, { code: issued.code, verifier: pkce.verifier, redirect_uri: REDIRECT_URI })).status).toBe(200)
-    const again = await token(app, { code: issued.code, verifier: pkce.verifier, redirect_uri: REDIRECT_URI })
+    expect((await token(app, { code: issued.code, code_verifier: pkce.verifier, redirect_uri: REDIRECT_URI })).status).toBe(200)
+    const again = await token(app, { code: issued.code, code_verifier: pkce.verifier, redirect_uri: REDIRECT_URI })
     expect(again.status).toBe(400)
     expect(await message(again)).toContain("not one this server issued")
   })
@@ -98,7 +98,7 @@ describe("POST /oauth/token, over a real authorize round trip", () => {
     )
 
     const other = createPkce()
-    const response = await token(app, { code: issued.code, verifier: other.verifier, redirect_uri: REDIRECT_URI })
+    const response = await token(app, { code: issued.code, code_verifier: other.verifier, redirect_uri: REDIRECT_URI })
     expect(response.status).toBe(400)
     expect(await message(response)).toContain("does not answer the challenge")
   })
@@ -111,7 +111,7 @@ describe("POST /oauth/token, over a real authorize round trip", () => {
       await authorize(app, { redirect_uri: REDIRECT_URI, state, code_challenge: pkce.challenge, code_challenge_method: "S256" }),
     )
 
-    const response = await token(app, { code: issued.code, verifier: pkce.verifier, redirect_uri: "http://127.0.0.1:65432/callback" })
+    const response = await token(app, { code: issued.code, code_verifier: pkce.verifier, redirect_uri: "http://127.0.0.1:65432/callback" })
     expect(response.status).toBe(400)
     expect(await message(response)).toContain("different redirect")
   })

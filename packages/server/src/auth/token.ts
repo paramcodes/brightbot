@@ -141,7 +141,9 @@ export class AuthError extends ApiError {
 export function exchangeInput(body: unknown): ExchangeInput {
   const record = body as Record<string, unknown>
   const code = record.code
-  const verifier = record.verifier
+  // `code_verifier`, the name RFC 7636 gives it, so the field is the one a client that read the RFC
+  // would send and not this server's own preference.
+  const verifier = record.code_verifier
   const redirectUri = record.redirect_uri
   if (typeof code !== "string" || typeof verifier !== "string" || typeof redirectUri !== "string") {
     throw new AuthError(400, "The token request is missing a field it needs")
