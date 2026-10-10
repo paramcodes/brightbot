@@ -4,6 +4,7 @@ import { reportError } from "./lib/sentry.js"
 import { apiNotFound, onApiError } from "./middleware/error-handler.js"
 import { chat } from "./routes/chat.js"
 import { health } from "./routes/health.js"
+import { oauth } from "./routes/oauth.js"
 import { sessions } from "./routes/sessions.js"
 
 /**
@@ -13,6 +14,7 @@ import { sessions } from "./routes/sessions.js"
 export const app = new Hono()
   .use("*", cors())
   .route("/health", health)
+  .route("/oauth", oauth)
   .route("/api/sessions", sessions)
   .route("/api/chat", chat)
   .notFound(apiNotFound)
