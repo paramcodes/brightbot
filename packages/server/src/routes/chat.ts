@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator"
-import type { ChatFrame, ChatRequest, Session, Store } from "@nightcode/shared"
+import type { AuthUser, ChatFrame, ChatRequest, CreditLedger, Session, Store, TokenUsage } from "@nightcode/shared"
 import { CHAT_STREAM_EVENT, chatRequestSchema } from "@nightcode/shared"
 import { Hono } from "hono"
 import type { SSEStreamingApi } from "hono/streaming"
@@ -8,12 +8,21 @@ import { z } from "zod"
 import { type Model, type ModelEvent, resolveModel, toFrame } from "../lib/ai.js"
 import { reportError } from "../lib/sentry.js"
 import { caller } from "../middleware/auth.js"
+import { ledger, requireCredits } from "../middleware/credits.js"
 import { ApiError, errorResponse } from "../middleware/error-handler.js"
+import { createCreditLedger } from "../services/credits.js"
+import { recordTurnUsage } from "../services/token-tracker.js"
 import { createStore } from "../store/index.js"
 
 /** What a turn ended as, decided by one `AbortSignal` evaluated at the last possible moment. */
 export type TurnResult =
-  | { readonly outcome: "complete" | "interrupted"; readonly content: string; readonly reasoning: string }
+  | {
+      readonly outcome: "complete" | "interrupted"
+      readonly content: string
+      readonly reasoning: string
+      /** What the provider billed, or nothing when the turn never reached its `finish` part. */
+      readonly usage: TokenUsage | undefined
+    }
   | { readonly outcome: "failed"; readonly code: string; readonly message: string }
 
 /**
@@ -29,11 +38,15 @@ export async function relayTurn(
 ): Promise<TurnResult> {
   let content = ""
   let reasoning = ""
+  let usage: TokenUsage | undefined
   const iterator = events[Symbol.asyncIterator]()
   try {
     while (!signal.aborted) {
       const next = await iterator.next()
-      if (next.done) break
+      if (next.done) {
+        usage = next.value
+        break
+      }
       const event = next.value
       if (event.type === "text") content += event.text
       else reasoning += event.text
@@ -45,8 +58,8 @@ export async function relayTurn(
     reportError(error)
     return { outcome: "failed", code: "MODEL_FAILED", message: "The model failed to answer this turn" }
   }
-  if (signal.aborted) return { outcome: "interrupted", content, reasoning }
-  return { outcome: "complete", content, reasoning }
+  if (signal.aborted) return { outcome: "interrupted", content, reasoning, usage: undefined }
+  return { outcome: "complete", content, reasoning, usage }
 }
 
 const STREAM_FAILURE: ChatFrame = { type: "error", code: "STREAM_FAILED", message: "The stream failed" }
@@ -72,6 +85,8 @@ interface Turn {
   readonly store: Store
   readonly session: Session
   readonly body: ChatRequest
+  readonly user: AuthUser
+  readonly context: { get: (key: string) => unknown }
   readonly selectModel: (model: string) => Model
 }
 
@@ -109,6 +124,11 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
       status: result.outcome,
     })
   }
+  // An interrupted turn carries no usage, because its stream never reached the `finish` part that
+  // reports it.
+  if (result.usage) {
+    await recordTurnUsage(ledger(turn.context), { user: turn.user, session: turn.session, model: turn.session.model, usage: result.usage })
+  }
   // The row is already on disk, so a client that dies between this write and `finish` still sees a turn
   // that exists.
   await write({ type: "finish" })
@@ -123,8 +143,11 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
 // The return type is left inferred. Naming it `Hono` widens the route's schema to `BlankSchema`, which
 // erases this route from `hc<AppType>` and leaves the CLI with a client that cannot see the one route
 // the whole streaming path depends on.
-export function createChatRoute(selectModel: (model: string) => Model = (model) => resolveModel(process.env, model)) {
-  return new Hono().post(
+export function createChatRoute(
+  selectModel: (model: string) => Model = (model) => resolveModel(process.env, model),
+  selectLedger: () => CreditLedger = () => createCreditLedger(),
+) {
+  return new Hono().use("*", requireCredits(selectLedger)).post(
     "/",
     zValidator("json", chatRequestSchema, (result, _c) => (result.success ? undefined : errorResponse(400, z.prettifyError(result.error)))),
     async (c) => {
@@ -146,7 +169,7 @@ export function createChatRoute(selectModel: (model: string) => Model = (model) 
         // throws, so the body catches its own failures instead: that keeps the wire inside the union.
         async (stream) => {
           try {
-            await streamTurn(stream, { store, session, body, selectModel }, c.req.raw.signal)
+            await streamTurn(stream, { store, session, body, user, context: c, selectModel }, c.req.raw.signal)
           } catch (error) {
             await reportStreamFailure(error, stream)
           }

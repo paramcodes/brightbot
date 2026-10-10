@@ -4,6 +4,7 @@ import { reportError } from "./lib/sentry.js"
 import { requireAuth } from "./middleware/auth.js"
 import { apiNotFound, onApiError } from "./middleware/error-handler.js"
 import { chat } from "./routes/chat.js"
+import { credits } from "./routes/credits.js"
 import { health } from "./routes/health.js"
 import { oauth, oauthAuthProvider } from "./routes/oauth.js"
 import { sessions } from "./routes/sessions.js"
@@ -23,6 +24,7 @@ export const app = new Hono()
   .use("/api/*", requireAuth(oauthAuthProvider))
   .route("/api/sessions", sessions)
   .route("/api/chat", chat)
+  .route("/api/credits", credits)
   .notFound(apiNotFound)
   .onError(onApiError(reportError))
 

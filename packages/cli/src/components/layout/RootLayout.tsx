@@ -5,6 +5,7 @@ import { useRenderer } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { currentUser } from "../../auth/identity.js"
 import { openTokenStore } from "../../auth/token-storage.js"
+import { openBrowser } from "../../commands/open-browser.js"
 import { usePreferences } from "../../context/PreferencesContext.js"
 import type { ChatTransport } from "../../core/chat/transport.js"
 import { keyToken } from "../../core/keys.js"
@@ -12,6 +13,7 @@ import { activeMention, MENTION_LIMIT, type MentionSpan, rankMatches, replaceMen
 import { exitCleanly } from "../../core/renderer.js"
 import { useRootKeys } from "../../core/responder/useResponder.js"
 import { type ChatSession, useChatSession } from "../../hooks/useChatSession.js"
+import { useCreditBalance } from "../../hooks/useCreditBalance.js"
 import { useSessionHistory } from "../../hooks/useSessionHistory.js"
 import { scanFiles } from "../../lib/file-scanner.js"
 import { ROUTES, RouteView, useRouter } from "../../router/routes.js"
@@ -21,6 +23,8 @@ import { CommandMenu } from "../command-menu/CommandMenu.js"
 import type { Command } from "../command-menu/commands.js"
 import { ModelSelectDialog } from "../dialogs/ModelSelectDialog.js"
 import { SessionListDialog } from "../dialogs/SessionListDialog.js"
+import { UpgradeDialog } from "../dialogs/UpgradeDialog.js"
+import { UsageDialog } from "../dialogs/UsageDialog.js"
 import { FileMentionMenu } from "../input/FileMentionMenu.js"
 import { InputBar } from "../input/InputBar.js"
 import { useToast } from "../toast/useToast.js"
@@ -54,6 +58,9 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const [modelsOpen, setModelsOpen] = useState(false)
   const [sessionFilter, setSessionFilter] = useState("")
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [usageFilter, setUsageFilter] = useState("")
+  const [usageOpen, setUsageOpen] = useState(false)
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [mentionFiles, setMentionFiles] = useState<readonly string[]>([])
   const [mentionSelected, setMentionSelected] = useState(0)
   const [dismissedMention, setDismissedMention] = useState<MentionSpan | null>(null)
@@ -62,6 +69,7 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   const pendingCaret = useRef<number | null>(null)
   const chat = useChatSession(chatTransport)
   const history = useSessionHistory(chatTransport)
+  const credits = useCreditBalance(chatTransport)
 
   const rescanMentionFiles = useCallback(() => {
     void scanFiles(cwd())
@@ -162,6 +170,27 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     setSessionFilter("")
   }
 
+  const closeUsage = () => {
+    setUsageOpen(false)
+    setUsageFilter("")
+  }
+
+  const requestTopUp = () => {
+    setUpgradeOpen(false)
+    chatTransport.topUp().then(
+      (result) => {
+        if (result.kind === "granted") {
+          credits.reload()
+          push({ kind: "success", message: `Added ${result.credits.toFixed(2)} credits` })
+          return
+        }
+        void openBrowser(result.url)
+        push({ kind: "info", message: "Opened the checkout page" })
+      },
+      () => push({ kind: "error", message: "The top-up could not be started" }),
+    )
+  }
+
   /**
    * The picker's keyboard, taken on the composer's own `onKeyDown`.
    *
@@ -213,7 +242,7 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   // Both modals take the printable keys the composer would otherwise eat, so both unfocus it. The
   // keyed remount is what the palette always needed: the slash that opened it was consumed, so the
   // composer's value never changes and React would leave the text in place.
-  const modalOpen = menuOpen || modelsOpen || sessionsOpen
+  const modalOpen = menuOpen || modelsOpen || sessionsOpen || usageOpen || upgradeOpen
 
   const submit = (prompt: string) => {
     // The model the user picked has to reach the turn, or the picker changes a label and nothing
@@ -249,10 +278,18 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
       return
     }
     if (command.id === "sessions") {
-      // Re-read on open rather than trusting the mount-time list: a session created since the CLI
-      // started is exactly the one the user is here to restore.
       history.reload()
       setSessionsOpen(true)
+      return
+    }
+    if (command.id === "usage") {
+      credits.reload()
+      setUsageOpen(true)
+      return
+    }
+    if (command.id === "upgrade") {
+      credits.reload()
+      setUpgradeOpen(true)
       return
     }
     if (command.id === "agents") {
@@ -332,6 +369,21 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
           onSelect={(session) => void resumeSession(session)}
           onClose={closeSessionPicker}
         />
+      ) : null}
+      {usageOpen ? (
+        <UsageDialog
+          theme={theme}
+          filter={usageFilter}
+          onFilter={setUsageFilter}
+          balance={credits.balance}
+          entries={credits.usage?.entries ?? []}
+          loading={credits.loading}
+          error={credits.error}
+          onClose={closeUsage}
+        />
+      ) : null}
+      {upgradeOpen ? (
+        <UpgradeDialog theme={theme} balance={credits.balance} onConfirm={requestTopUp} onClose={() => setUpgradeOpen(false)} />
       ) : null}
     </box>
   )

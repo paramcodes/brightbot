@@ -1,3 +1,4 @@
+import type { TokenUsage } from "@nightcode/shared"
 import type { Model, ModelEvent, ModelRequest } from "../ai.js"
 
 const DEFAULT_DELAY_MS = 3
@@ -28,10 +29,6 @@ export function resolveScriptedOptions(environment: Record<string, string | unde
   }
 }
 
-/**
- * One chunk per word, whitespace kept on the word it follows, so joining the chunks reproduces the
- * source exactly.
- */
 function chunks(text: string): string[] {
   return text.split(/(?<=\s)/).filter((chunk) => chunk.length > 0)
 }
@@ -53,6 +50,16 @@ function pause(milliseconds: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
+ * The local default has no provider to bill it, so its usage is an estimate.
+ *
+ * Named for what it is: a test asserting against a fake number is fine and one asserting against a
+ * lie is not.
+ */
+export function estimateUsage(prompt: string, said: string): TokenUsage {
+  return { promptTokens: Math.ceil(prompt.length / 4), completionTokens: Math.ceil(said.length / 4) }
+}
+
+/**
  * The local default: no SDK import, no secret, no network. The pause is cancelled by the signal rather
  * than left to expire, so an abort lands between words instead of after the reply.
  */
@@ -60,16 +67,18 @@ export function scriptedModel(options: ScriptedOptions = {}): Model {
   const settings = resolveScriptedOptions(process.env, options)
   return {
     name: "scripted",
-    async *stream(request: ModelRequest): AsyncGenerator<ModelEvent> {
+    async *stream(request: ModelRequest): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
+      const prompt = request.messages.map((message) => message.content).join("")
       for (const type of ["reasoning", "text"] as const) {
         const text = type === "reasoning" ? settings.reasoning : settings.reply
         const words = chunks(text)
         for (const [index, word] of words.entries()) {
           if (index > 0) await pause(settings.delayMs, request.signal)
-          if (request.signal.aborted) return
+          if (request.signal.aborted) return undefined
           yield { type, text: word }
         }
       }
+      return estimateUsage(prompt, `${settings.reasoning}${settings.reply}`)
     },
   }
 }

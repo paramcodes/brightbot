@@ -2,13 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { ApiErrorBody, ChatFrame, Session } from "@nightcode/shared"
+import type { ApiErrorBody, ChatFrame, Session, TokenUsage } from "@nightcode/shared"
 import { chatFrameSchema, NIGHTCODE_HOME_ENV } from "@nightcode/shared"
 import { Hono } from "hono"
 import { app } from "../app.js"
 import { localAuthProvider } from "../auth/local.js"
-import type { Model, ModelEvent } from "../lib/ai.js"
+import { type Model, type ModelEvent, resolveModel } from "../lib/ai.js"
 import { requireAuth } from "../middleware/auth.js"
+import { onApiError } from "../middleware/error-handler.js"
+import { LocalCreditLedger } from "../services/credits.js"
 import { createChatRoute } from "./chat.js"
 
 type StoreRow = { id: string; sessionId: string; role: string; content: string; status: string; createdAt: string }
@@ -200,11 +202,113 @@ describe("POST /api/chat", () => {
     })
   })
 
+  test("a finished turn is charged the credits its model costs", async () => {
+    const session = await createSession()
+    const ledger = new LocalCreditLedger(join(home, "the-charge-ledger.json"))
+    const charged = new Hono()
+      .use("/api/*", requireAuth(localAuthProvider({ secret: SECRET })))
+      .route(
+        "/api/chat",
+        createChatRoute(
+          (model) => resolveModel(process.env, model),
+          () => ledger,
+        ),
+      )
+      .onError(onApiError(() => {}))
+
+    await withServer(charged.fetch, async (baseUrl) => {
+      await collect(await post(baseUrl, session.id))
+    })
+
+    // The scripted provider bills a token every four characters, so "hi there" is 2 prompt tokens and
+    // "thinking hardhello world" is 6 completion tokens. "scripted" is not in the price catalog, so it
+    // is charged at the most expensive row in it, gpt-5-pro at 15 in and 120 out per million. That is
+    // 0.003 plus 0.072 credits, and the meter rounds to a whole credit, so a turn this small is free.
+    // The charge is real but too small to see, which is why this asserts the row exists and the rate
+    // was applied rather than a balance drop.
+    const entries = await ledger.recent("local", 10)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.model).toBe("scripted")
+    expect(entries[0]?.promptTokens).toBe(2)
+    expect(entries[0]?.completionTokens).toBe(6)
+    expect(entries[0]?.credits).toBe(0)
+  })
+
+  test("a turn large enough to cost whole credits reduces the balance by them", async () => {
+    const session = await createSession()
+    const ledger = new LocalCreditLedger(join(home, "the-big-charge-ledger.json"))
+    const big: Model = {
+      name: "big",
+      async *stream(): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
+        yield { type: "text", text: "a long answer" }
+        return { promptTokens: 1_000_000, completionTokens: 1_000_000 }
+      },
+    }
+    const charged = new Hono()
+      .use("/api/*", requireAuth(localAuthProvider({ secret: SECRET })))
+      .route(
+        "/api/chat",
+        createChatRoute(
+          () => big,
+          () => ledger,
+        ),
+      )
+      .onError(onApiError(() => {}))
+
+    await withServer(charged.fetch, async (baseUrl) => {
+      await collect(await post(baseUrl, session.id))
+    })
+
+    // The session's model is gpt-5-pro: a million tokens in and out is 15 plus 120 dollars, which is
+    // 13500 credits, and the grant of 500 cannot cover it, so the balance clamps to zero.
+    const entries = await ledger.recent("local", 10)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.credits).toBe(13500)
+    expect(await ledger.balance("local")).toBe(0)
+  })
+
+  test("an exhausted balance is refused before the stream opens", async () => {
+    const session = await createSession()
+    // A real local ledger emptied by a charge the top-priced table cannot pay for, and the route
+    // mounted over the same auth middleware the app uses, because the gate reads the caller off the
+    // request context.
+    const gatedLedger = new LocalCreditLedger(join(home, "credits.json"))
+    await gatedLedger.record({
+      userId: "local",
+      sessionId: session.id,
+      model: "gpt-5-pro",
+      usage: { promptTokens: 1_000_000, completionTokens: 1_000_000 },
+    })
+    const gated = new Hono()
+      .use("/api/*", requireAuth(localAuthProvider({ secret: SECRET })))
+      .route(
+        "/api/chat",
+        createChatRoute(
+          (model) => resolveModel(process.env, model),
+          () => gatedLedger,
+        ),
+      )
+      .onError(onApiError(() => {}))
+
+    const response = await gated.request("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: session.id, messages: [{ role: "user", content: "hi there" }], system: "prompt" }),
+    })
+
+    expect(response.status).toBe(402)
+    expect(await response.json()).toEqual({
+      error: { code: "PAYMENT_REQUIRED", message: "You have no credits left. Run /upgrade to add more." },
+    })
+    // The refusal happens before the turn is appended, so the store holds no row for a turn that never ran.
+    expect(readRows()).toEqual([])
+  })
+
   test("a provider failure writes the error frame and persists no assistant row", async () => {
     const session = await createSession()
     const failing: Model = {
       name: "failing",
-      async *stream(): AsyncGenerator<ModelEvent> {
+      async *stream(): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
         yield { type: "text", text: "partial" }
         throw new Error("the provider exploded")
       },
@@ -243,10 +347,11 @@ describe("POST /api/chat", () => {
     // A model that breaks the store's path mid-turn, so writing the assistant row is what fails.
     const sabotaging: Model = {
       name: "sabotage",
-      async *stream(): AsyncGenerator<ModelEvent> {
+      async *stream(): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
         rmSync(home, { recursive: true, force: true })
         writeFileSync(home, "not a directory")
         yield { type: "text", text: "partial" }
+        return undefined
       },
     }
     const sabotagedApp = new Hono().use("/api/*", requireAuth(localAuthProvider({ secret: SECRET }))).route(
@@ -284,9 +389,10 @@ describe("POST /api/chat", () => {
     const seen: string[] = []
     const capturing: Model = {
       name: "capturing",
-      async *stream(request): AsyncGenerator<ModelEvent> {
+      async *stream(request): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
         seen.push(request.system)
         yield { type: "text", text: "ok" }
+        return undefined
       },
     }
     const session = await createSession()

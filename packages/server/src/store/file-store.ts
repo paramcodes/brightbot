@@ -33,21 +33,11 @@ const messageSchema = z.object({
   createdAt: timestamp,
 })
 
-const tokenUsageSchema = z.object({
-  id: z.string().min(1),
-  sessionId: z.string().min(1),
-  model: z.string().min(1),
-  promptTokens: z.number().int().nonnegative(),
-  completionTokens: z.number().int().nonnegative(),
-  createdAt: timestamp,
-})
-
 const documentSchema = z.object({
   version: z.literal(1),
   users: z.array(userSchema),
   sessions: z.array(sessionSchema),
   messages: z.array(messageSchema),
-  tokenUsage: z.array(tokenUsageSchema),
 })
 
 /**

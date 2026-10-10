@@ -50,15 +50,6 @@ export interface Message {
 export const MESSAGE_STATUSES = ["complete", "interrupted"] as const
 export type MessageStatus = (typeof MESSAGE_STATUSES)[number]
 
-export interface TokenUsage {
-  id: string
-  sessionId: string
-  model: string
-  promptTokens: number
-  completionTokens: number
-  createdAt: string
-}
-
 /**
  * What a caller hands the store to open a session.
  *

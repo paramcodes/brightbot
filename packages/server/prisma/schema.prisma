@@ -39,7 +39,6 @@ model Session {
   updatedAt DateTime  @updatedAt
   user      User      @relation(fields: [userId], references: [id])
   messages  Message[]
-  usage     TokenUsage[]
 }
 
 model Message {
@@ -52,14 +51,4 @@ model Message {
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
-}
-
-model TokenUsage {
-  id               String   @id
-  sessionId        String
-  model            String
-  promptTokens     Int
-  completionTokens Int
-  createdAt        DateTime @default(now())
-  session          Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }

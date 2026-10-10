@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception"
 
 const STATUS_CODE: Record<number, string> = {
   400: "BAD_REQUEST",
+  402: "PAYMENT_REQUIRED",
   404: "NOT_FOUND",
   500: "INTERNAL_ERROR",
 }
