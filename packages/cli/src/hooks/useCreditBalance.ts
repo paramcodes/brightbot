@@ -6,7 +6,6 @@ export interface CreditBalance {
   readonly balance: number
   readonly usage: CreditUsage | null
   readonly loading: boolean
-  /** The server's own sentence, or null. Shown by the dialog rather than swallowed. */
   readonly error: string | null
   readonly reload: () => void
 }
@@ -14,8 +13,7 @@ export interface CreditBalance {
 /**
  * The balance and the recent charges, read through the transport on mount and again on `reload`.
  *
- * The transport is the only dependency, for the same reason `useSessionHistory` has no other one: a
- * hook that reached the api client directly would need a server in every test that mounts the shell.
+ * The transport is the only dependency, for the same reason `useSessionHistory` has no other one.
  */
 export function useCreditBalance(transport: ChatTransport): CreditBalance {
   const [usage, setUsage] = useState<CreditUsage | null>(null)

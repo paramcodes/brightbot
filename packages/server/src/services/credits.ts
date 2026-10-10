@@ -14,10 +14,8 @@ import { polarLedgerFrom } from "../lib/polar.js"
  * same port and is chosen by `POLAR_ACCESS_TOKEN` the way the store is chosen by `DATABASE_URL`.
  */
 
-/** What a first-time caller starts with, so a fresh checkout can chat before it has paid. */
 export const DEVELOPMENT_GRANT_CREDITS = 500
 
-/** What the local ledger adds when asked to top up. */
 export const TOP_UP_CREDITS = 500
 
 const timestamp = z.string().datetime()
@@ -109,7 +107,6 @@ export class LocalCreditLedger implements CreditLedger {
     })
   }
 
-  /** Newest first, which is the order the entries were pushed in reversed. */
   async recent(userId: string, limit: number): Promise<CreditEntry[]> {
     return this.read()
       .entries.filter((entry) => entry.userId === userId)
@@ -126,7 +123,6 @@ export class LocalCreditLedger implements CreditLedger {
     })
   }
 
-  /** Adds credits to a caller's row, creating the row when this is their first. */
   private grant(document: CreditsDocument, userId: string, credits: number): void {
     const now = new Date().toISOString()
     const row = document.balances.find((candidate) => candidate.userId === userId)
@@ -142,8 +138,6 @@ export class LocalCreditLedger implements CreditLedger {
     try {
       return creditsDocumentSchema.parse(JSON.parse(readFileSync(this.creditsPath, "utf8")))
     } catch {
-      // A ledger that is missing, unparseable, or written by a newer shape reads as empty rather than
-      // refusing to boot. The development grant is applied on read, so nothing has to be seeded.
       return structuredClone(EMPTY_CREDITS)
     }
   }

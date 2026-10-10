@@ -39,7 +39,6 @@ describe("LocalCreditLedger", () => {
     const ledger = new LocalCreditLedger()
     const entry = await ledger.record(CHARGE)
 
-    // 100k in at 3 per million is 30 credits, and 50k out at 15 per million is 75 credits.
     expect(entry.credits).toBe(105)
     expect(await ledger.balance("local")).toBe(DEVELOPMENT_GRANT_CREDITS - 105)
   })
@@ -53,7 +52,6 @@ describe("LocalCreditLedger", () => {
 
   test("a balance clamps at zero rather than becoming a debt", async () => {
     const ledger = new LocalCreditLedger()
-    // A million tokens in and out on the top-priced model costs more than the grant.
     await ledger.record({ ...CHARGE, model: "gpt-5-pro", usage: { promptTokens: 1_000_000, completionTokens: 1_000_000 } })
 
     expect(await ledger.balance("local")).toBe(0)

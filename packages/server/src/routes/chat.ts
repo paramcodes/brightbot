@@ -44,8 +44,6 @@ export async function relayTurn(
     while (!signal.aborted) {
       const next = await iterator.next()
       if (next.done) {
-        // The generator's return value arrives with `done`, and it is the only moment a consumer
-        // learns what the provider billed.
         usage = next.value
         break
       }
@@ -126,9 +124,8 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
       status: result.outcome,
     })
   }
-  // Charged after the row is on disk and before the finish frame, so a client that dies between the
-  // two still leaves a turn that was paid for. An interrupted turn carries no usage, because its
-  // stream never reached the `finish` part that reports it.
+  // An interrupted turn carries no usage, because its stream never reached the `finish` part that
+  // reports it.
   if (result.usage) {
     await recordTurnUsage(ledger(turn.context), { user: turn.user, session: turn.session, model: turn.session.model, usage: result.usage })
   }

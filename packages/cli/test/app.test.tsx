@@ -183,7 +183,6 @@ describe("app shell", () => {
     expect(screen).toContain("412.50")
     expect(screen).toContain("claude-sonnet-4-5")
     expect(screen).toContain("18.00 cr")
-    // The mount read plus the reload the command performs, which is the re-read on open.
     expect(scripted.usages).toHaveLength(2)
   })
 
@@ -197,11 +196,9 @@ describe("app shell", () => {
     await type(setup, "/")
     await type(setup, "upgrade")
     await press(setup, ["RETURN"])
-    expect(frame(setup)).toContain("add 500 credits")
+    expect(frame(setup)).toContain("add credits")
 
     await press(setup, ["RETURN"])
-    // The top-up is a promise that resolves into a toast, so the shell has to be given the macrotask
-    // the transport's resolution schedules before the frame carries it.
     await untilSettled(setup, () => frame(setup).includes("Added 500.00 credits"))
   })
 

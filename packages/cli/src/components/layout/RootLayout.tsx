@@ -175,7 +175,6 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     setUsageFilter("")
   }
 
-  /** The top-up loop, run from `/upgrade`. The server decides whether it granted or has to be paid. */
   const requestTopUp = () => {
     setUpgradeOpen(false)
     chatTransport.topUp().then(
@@ -279,15 +278,11 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
       return
     }
     if (command.id === "sessions") {
-      // Re-read on open rather than trusting the mount-time list: a session created since the CLI
-      // started is exactly the one the user is here to restore.
       history.reload()
       setSessionsOpen(true)
       return
     }
     if (command.id === "usage") {
-      // Re-read on open rather than trusting the mount-time list: a turn spent since the CLI started is
-      // exactly the charge the user is here to see.
       credits.reload()
       setUsageOpen(true)
       return

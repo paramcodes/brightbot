@@ -1,4 +1,4 @@
-/** The root palette catalog. Phase 5 owns `/sessions` and `/models`; Phase 7 owns `/usage` and `/upgrade`. */
+/** The root palette catalog. */
 export interface Command {
   id: string
   name: string

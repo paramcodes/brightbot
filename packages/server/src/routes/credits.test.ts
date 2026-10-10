@@ -27,7 +27,6 @@ afterEach(() => {
   else process.env[NIGHTCODE_HOME_ENV] = originalHome
 })
 
-/** The real app's shape, so the routes are proved with the caller on the context the way it arrives. */
 function appWith(ledger: LocalCreditLedger): Hono {
   return new Hono()
     .use("/api/*", requireAuth(localAuthProvider({ secret: SECRET })))

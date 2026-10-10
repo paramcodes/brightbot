@@ -22,8 +22,6 @@ export interface ChatTransport {
   /** One session's transcript in arrival order. */
   listMessages(sessionId: string): Promise<Message[]>
   stream(request: ChatRequest, signal: AbortSignal): Promise<AsyncIterable<ChatFrame>>
-  /** The balance and the recent charges, which is what the `/usage` dialog renders. */
   usage(): Promise<CreditUsage>
-  /** Adds credits, or hands back a checkout URL to open. */
   topUp(): Promise<TopUpResult>
 }

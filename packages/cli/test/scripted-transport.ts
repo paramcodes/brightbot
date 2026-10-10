@@ -25,7 +25,6 @@ export interface ScriptedTransport {
   readonly listed: Session[][]
   /** Every id `listMessages` was asked about, in the order they were asked. */
   readonly listedIds: string[]
-  /** What `usage` answered, one entry per call. The call takes no argument, so the answer is the record. */
   readonly usages: CreditUsage[]
 }
 

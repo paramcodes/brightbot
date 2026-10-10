@@ -29,10 +29,6 @@ export function resolveScriptedOptions(environment: Record<string, string | unde
   }
 }
 
-/**
- * One chunk per word, whitespace kept on the word it follows, so joining the chunks reproduces the
- * source exactly.
- */
 function chunks(text: string): string[] {
   return text.split(/(?<=\s)/).filter((chunk) => chunk.length > 0)
 }
@@ -56,9 +52,8 @@ function pause(milliseconds: number, signal: AbortSignal): Promise<void> {
 /**
  * The local default has no provider to bill it, so its usage is an estimate.
  *
- * Named for what it is, because a test asserting against a fake number is fine and a test asserting
- * against a lie is not. Both sides are counted at four characters to a token, which is the rule of
- * thumb the tokenizers describe.
+ * Named for what it is: a test asserting against a fake number is fine and one asserting against a
+ * lie is not.
  */
 export function estimateUsage(prompt: string, said: string): TokenUsage {
   return { promptTokens: Math.ceil(prompt.length / 4), completionTokens: Math.ceil(said.length / 4) }

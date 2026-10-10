@@ -104,9 +104,7 @@ export interface CreditLedger {
   balance(userId: string): Promise<number>
   /** Charges one finished turn and answers with what it charged. */
   record(charge: CreditCharge): Promise<CreditEntry>
-  /** The most recent charges, newest first, for the `/usage` dialog. */
   recent(userId: string, limit: number): Promise<CreditEntry[]>
-  /** Adds credits or hands back a URL to pay for them. */
   topUp(userId: string): Promise<TopUpResult>
 }
 

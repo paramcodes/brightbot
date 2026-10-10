@@ -5,7 +5,6 @@ import { caller } from "../middleware/auth.js"
 import { ApiError } from "../middleware/error-handler.js"
 import { createCreditLedger } from "../services/credits.js"
 
-/** How many recent charges `/usage` shows. Enough to fill the dialog and no more. */
 const RECENT_LIMIT = 20
 
 /**
@@ -27,8 +26,6 @@ export function createCreditRoutes(select: () => CreditLedger = () => createCred
       const user = caller(c)
       if (user === null) throw new ApiError(401, "The request carries no session that this server issued")
       const result: TopUpResult = await select().topUp(user.id)
-      // Parsed rather than trusted, because the local ledger and the Polar adapter both answer this
-      // route and a shape neither side validated is a shape the CLI has to guess at.
       return c.json(topUpResultSchema.parse(result))
     })
 }

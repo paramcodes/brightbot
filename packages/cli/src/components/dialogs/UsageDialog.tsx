@@ -40,8 +40,6 @@ export function chargeHint(entry: CreditEntry, now: Date): string {
 }
 
 /**
- * The rows a status line uses, and why. The empty state is a row with an id no charge can have, so the
- * cursor can move over it while selecting it does nothing.
  */
 const STATUS_ID = "usage-status"
 
@@ -57,7 +55,7 @@ export interface UsageDialogProps {
   onClose: () => void
 }
 
-/** The `/usage` dialog: what is left, and what it was spent on. It owns no keyboard logic of its own. */
+/** The `/usage` dialog: what is left, and what it was spent on. */
 export function UsageDialog({ theme, filter, onFilter, balance, entries, loading, error, onSelect, onClose }: UsageDialogProps) {
   const now = new Date()
   const items: readonly DialogItem[] =

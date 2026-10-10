@@ -91,9 +91,6 @@ export function polarLedger(options: PolarLedgerOptions): CreditLedger {
   return {
     async balance(userId: string): Promise<number> {
       const body = meterBalanceSchema.parse(await call(`/v1/customer-meters/?external_customer_id=${encodeURIComponent(userId)}`))
-      // Polar has no notion of which meter is Night Code's, so the first row is the one. An
-      // organization that meters anything else gets whichever meter sorts first, which is a
-      // documented edge rather than a hidden one.
       return body.items[0]?.balance ?? 0
     },
 
@@ -122,9 +119,6 @@ export function polarLedger(options: PolarLedgerOptions): CreditLedger {
                     total_tokens: charge.usage.promptTokens + charge.usage.completionTokens,
                   },
                   _cost: { amount: centsOf(credits), currency: "usd" },
-                  // Polar's event metadata is a flat map of scalars, so the three fields the
-                  // `/usage` dialog renders ride along as first-class keys rather than being
-                  // reconstructed from `_llm`.
                   sessionId: charge.sessionId,
                   model: charge.model,
                   credits,
