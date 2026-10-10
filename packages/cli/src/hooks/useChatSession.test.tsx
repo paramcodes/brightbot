@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import type { Message, Session } from "@nightcode/shared"
 import { frame, renderTui, settle, untilSettled } from "../../test/harness.js"
 import { ANSWER_FRAMES, scriptedTransport } from "../../test/scripted-transport.js"
 import type { ChatTransport } from "../core/chat/transport.js"
 import type { ChatMessage } from "../core/chat/types.js"
 import type { ChatSession } from "./useChatSession.js"
-import { sessionTitle, transcript, useChatSession } from "./useChatSession.js"
+import { sessionTitle, toChatMessages, transcript, useChatSession } from "./useChatSession.js"
 
 /** The probe is how a hook is called the way a component calls it: through a render, not directly. */
 let chat: ChatSession | null = null
@@ -28,6 +29,9 @@ function current(): ChatSession {
   return chat
 }
 
+/** The model the caller passes, standing in for the live one `RootLayout` hands over. */
+const SUBMITTED_MODEL = "claude-sonnet-4-5"
+
 function message(overrides: Partial<ChatMessage>): ChatMessage {
   return { id: "m1", role: "assistant", content: "", reasoning: "", status: "complete", error: null, ...overrides }
 }
@@ -37,7 +41,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport()
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("hello there")).toEqual({ accepted: true })
+    expect(current().submit("hello there", SUBMITTED_MODEL)).toEqual({ accepted: true })
     await settle(setup)
 
     const screen = frame(setup)
@@ -54,7 +58,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("what is it")
+    current().submit("what is it", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[the answer is 42]"))
 
@@ -66,7 +70,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "text", text: "done" }, { type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("go")
+    current().submit("go", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[done]"))
 
@@ -82,7 +86,7 @@ describe("useChatSession", () => {
     ])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("go")
+    current().submit("go", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("The model failed to answer this turn"))
 
@@ -94,8 +98,8 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("first")).toEqual({ accepted: true })
-    expect(current().submit("second")).toEqual({ accepted: false, reason: "A turn is already running" })
+    expect(current().submit("first", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    expect(current().submit("second", SUBMITTED_MODEL)).toEqual({ accepted: false, reason: "A turn is already running" })
     await settle(setup)
 
     expect(frame(setup)).toContain("user complete [first] []")
@@ -113,15 +117,15 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("rename the readme button")
+    current().submit("rename the readme button", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
-    expect(scripted.created).toEqual([{ title: "rename the readme button", model: "claude-3-5-sonnet" }])
+    expect(scripted.created).toEqual([{ title: "rename the readme button", model: "claude-sonnet-4-5" }])
     expect(current().sessionId).toBe("session-scripted")
 
     scripted.release()
-    expect(current().submit("and the docs")).toEqual({ accepted: true })
+    expect(current().submit("and the docs", SUBMITTED_MODEL)).toEqual({ accepted: true })
     await untilSettled(setup, () => frame(setup).includes("and the docs"))
 
     expect(scripted.created).toHaveLength(1)
@@ -129,15 +133,27 @@ describe("useChatSession", () => {
     setup.renderer.destroy()
   })
 
+  test("the model the caller hands the submit is the model the session is created with", async () => {
+    const scripted = scriptedTransport([{ type: "finish" }])
+    const setup = await renderTui(<Probe transport={scripted.transport} />)
+
+    current().submit("switch me to opus", "claude-opus-4-5")
+    scripted.release()
+    await untilSettled(setup, () => frame(setup).includes("assistant complete"))
+
+    expect(scripted.created).toEqual([{ title: "switch me to opus", model: "claude-opus-4-5" }])
+    setup.renderer.destroy()
+  })
+
   test("the transcript carries the settled turns and the prompt, and never the turn still being written", async () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("what is it")
+    current().submit("what is it", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[the answer is 42]"))
 
-    current().submit("and now?")
+    current().submit("and now?", SUBMITTED_MODEL)
     await untilSettled(setup, () => scripted.streamed.length === 2)
 
     expect(scripted.streamed[1]).toEqual({
@@ -157,7 +173,7 @@ describe("useChatSession", () => {
     })
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("stop me partway")
+    current().submit("stop me partway", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[half an ]"))
 
@@ -168,7 +184,7 @@ describe("useChatSession", () => {
     // which is why the status rather than the content is what marks the turn.
     expect(frame(setup)).toContain("assistant interrupted [half an ] [weighing ]")
     expect(frame(setup)).toContain("settled")
-    expect(current().submit("and now")).toEqual({ accepted: true })
+    expect(current().submit("and now", SUBMITTED_MODEL)).toEqual({ accepted: true })
     setup.renderer.destroy()
   })
 
@@ -176,7 +192,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("something")
+    current().submit("something", SUBMITTED_MODEL)
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -193,7 +209,7 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("first")).toEqual({ accepted: true })
+    expect(current().submit("first", SUBMITTED_MODEL)).toEqual({ accepted: true })
 
     // The turn is parked inside the transport, so `/clear` lands while the session is still being made.
     current().reset()
@@ -210,6 +226,132 @@ describe("useChatSession", () => {
     expect(current().sessionId).toBeNull()
     expect(current().messages).toEqual([])
     expect(frame(setup)).not.toContain("first")
+    expect(frame(setup)).not.toContain("the answer is 42")
+    setup.renderer.destroy()
+  })
+})
+
+/** A session the store hands back, and the transcript it holds, both older than this run. */
+const RESUMED: Session = {
+  id: "session-resumed",
+  userId: "local",
+  title: "An earlier conversation",
+  model: "claude-sonnet-4-5",
+  createdAt: "2026-10-01T09:00:00.000Z",
+  updatedAt: "2026-10-01T09:00:00.000Z",
+}
+
+const RESUMED_ROWS: readonly Message[] = [
+  {
+    id: "r1",
+    sessionId: RESUMED.id,
+    role: "user",
+    content: "the first question",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:01.000Z",
+  },
+  {
+    id: "r2",
+    sessionId: RESUMED.id,
+    role: "system",
+    content: "you are a coding agent",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:02.000Z",
+  },
+  {
+    id: "r3",
+    sessionId: RESUMED.id,
+    role: "assistant",
+    content: "the first answer",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:03.000Z",
+  },
+  {
+    id: "r4",
+    sessionId: RESUMED.id,
+    role: "user",
+    content: "the second question",
+    status: "complete",
+    createdAt: "2026-10-01T09:00:04.000Z",
+  },
+  {
+    id: "r5",
+    sessionId: RESUMED.id,
+    role: "assistant",
+    content: "half of the second answer",
+    status: "interrupted",
+    createdAt: "2026-10-01T09:00:05.000Z",
+  },
+]
+
+describe("toChatMessages", () => {
+  test("maps a stored transcript to view rows, dropping the system one", () => {
+    expect(toChatMessages(RESUMED_ROWS)).toEqual([
+      { id: "r1", role: "user", content: "the first question", reasoning: "", status: "complete", error: null },
+      { id: "r3", role: "assistant", content: "the first answer", reasoning: "", status: "complete", error: null },
+      { id: "r4", role: "user", content: "the second question", reasoning: "", status: "complete", error: null },
+      { id: "r5", role: "assistant", content: "half of the second answer", reasoning: "", status: "interrupted", error: null },
+    ])
+  })
+})
+
+describe("resume", () => {
+  test("hydrates the saved transcript and the next turn joins the same session", async () => {
+    const scripted = scriptedTransport([{ type: "finish" }], { parked: false })
+    const setup = await renderTui(<Probe transport={scripted.transport} />)
+
+    current().resume(RESUMED, RESUMED_ROWS)
+    await settle(setup)
+
+    expect(current().sessionId).toBe(RESUMED.id)
+    expect(current().messages).toEqual(toChatMessages(RESUMED_ROWS))
+    expect(frame(setup)).toContain("user complete [the first question] []")
+
+    // The session already exists, so no second one is created: this is the whole of what "resume"
+    // means for a session id, and the transcript the next turn sends proves it rather than a flag.
+    expect(current().submit("and the third", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    await untilSettled(setup, () => scripted.streamed.length === 1)
+
+    expect(scripted.created).toEqual([])
+    expect(scripted.streamed[0]?.sessionId).toBe(RESUMED.id)
+    // The whole transcript goes back, so the system row's absence and the interrupted answer's presence
+    // are both what the server would see rather than two facts asserted about the hook's own state.
+    expect(scripted.streamed[0]?.messages).toEqual([
+      { role: "user", content: "the first question" },
+      { role: "assistant", content: "the first answer" },
+      { role: "user", content: "the second question" },
+      { role: "assistant", content: "half of the second answer" },
+      { role: "user", content: "and the third" },
+    ])
+    setup.renderer.destroy()
+  })
+
+  test("a resume during a live turn aborts it, and the turn's own session id never writes back", async () => {
+    const scripted = scriptedTransport(ANSWER_FRAMES)
+    const setup = await renderTui(<Probe transport={scripted.transport} />)
+
+    expect(current().submit("a question that is still running", SUBMITTED_MODEL)).toEqual({ accepted: true })
+    await settle(setup)
+    expect(frame(setup)).toContain("generating")
+
+    // The turn is parked inside the transport, so the resume lands while the session is still being made.
+    // The header stays "generating" here on purpose: the scripted transport parks on a promise the abort
+    // does not resolve, so its run has not unwound yet. A real transport's reader rejects the moment the
+    // signal fires, which is why the settled state is asserted after the gate opens rather than here.
+    current().resume(RESUMED, RESUMED_ROWS)
+    await settle(setup)
+    expect(current().sessionId).toBe(RESUMED.id)
+
+    scripted.release()
+    await settle(setup)
+    await settle(setup)
+
+    // The run that was interrupted finished late. Its generation no longer matches, so the session id it
+    // learned did not write itself back over the resumed one.
+    expect(frame(setup)).toContain("settled")
+    expect(current().sessionId).toBe(RESUMED.id)
+    expect(current().messages).toEqual(toChatMessages(RESUMED_ROWS))
+    expect(frame(setup)).not.toContain("a question that is still running")
     expect(frame(setup)).not.toContain("the answer is 42")
     setup.renderer.destroy()
   })

@@ -1,20 +1,22 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import { PREFERENCES_PATH } from "@nightcode/shared"
+import { type AgentMode, isAgentMode, PREFERENCES_PATH } from "@nightcode/shared"
 import { DEFAULT_THEME, isThemeName, type ThemeName } from "../styles/themes/index.js"
 
 export type { ThemeName }
 
 export interface Preferences {
   theme: ThemeName
-  mode: string
+  mode: AgentMode
   model: string
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: DEFAULT_THEME,
   mode: "plan",
-  model: "claude-3-5-sonnet",
+  // Matches the Anthropic adapter's own default and a row of the shared model catalog, so the header's
+  // model cell always names a model the picker can show and the provider can actually call.
+  model: "claude-sonnet-4-5",
 }
 
 export interface ConfigStore {
@@ -53,7 +55,9 @@ function parsePreferences(value: unknown): Partial<Preferences> {
   const record = value as Record<string, unknown>
   const parsed: Partial<Preferences> = {}
   if (typeof record.theme === "string" && isThemeName(record.theme)) parsed.theme = record.theme
-  if (typeof record.mode === "string") parsed.mode = record.mode
+  // Guarded for the same reason as the theme: an unreadable file must not put a mode on screen that
+  // no prompt and no switch branch knows about.
+  if (typeof record.mode === "string" && isAgentMode(record.mode)) parsed.mode = record.mode
   if (typeof record.model === "string") parsed.model = record.model
   return parsed
 }

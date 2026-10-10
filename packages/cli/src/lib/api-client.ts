@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ChatFrame, ChatRequest, NewSession, Session } from "@nightcode/shared"
+import type { ApiErrorBody, ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
 import { chatFrameSchema } from "@nightcode/shared"
 import { hc } from "hono/client"
 import type { AppType } from "../../../server/src/app.js"
@@ -45,6 +45,16 @@ export class ChatRequestError extends Error {
 export const httpChatTransport: ChatTransport = {
   async createSession(input: NewSession): Promise<Session> {
     const response = await apiClient.api.sessions.$post({ json: input })
+    if (!response.ok) throw await requestError(response)
+    return await response.json()
+  },
+  async listSessions(): Promise<Session[]> {
+    const response = await apiClient.api.sessions.$get()
+    if (!response.ok) throw await requestError(response)
+    return await response.json()
+  },
+  async listMessages(sessionId: string): Promise<Message[]> {
+    const response = await apiClient.api.sessions[":id"].messages.$get({ param: { id: sessionId } })
     if (!response.ok) throw await requestError(response)
     return await response.json()
   },

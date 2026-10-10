@@ -76,4 +76,8 @@ export interface Store {
   createSession(input: NewSession): Promise<Session>
   getSession(id: string): Promise<Session | null>
   appendMessage(input: NewMessage): Promise<Message>
+  /** Newest first. Both implementations answer in that order, and neither sorts by a timestamp. */
+  listSessions(): Promise<Session[]>
+  /** One session's transcript in arrival order, and never another session's rows. */
+  listMessages(sessionId: string): Promise<Message[]>
 }

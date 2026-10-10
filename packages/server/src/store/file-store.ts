@@ -103,6 +103,30 @@ export class FileStore implements Store {
     return this.read().sessions.find((session) => session.id === id) ?? null
   }
 
+  /**
+   * The file's own array order, reversed.
+   *
+   * Nothing here sorts, and the next reader must not "fix" it into one. `updatedAt` is written once at
+   * create and never updated anywhere in the tree, so ordering by it is ordering by creation time under
+   * a name that promises recency. `createdAt` is not unique either, because it is a millisecond ISO
+   * string and two overlapping calls land on the same value, so a sort on it can swap two rows. The
+   * array order is what the writes actually did, and its reverse is the truth.
+   */
+  async listSessions(): Promise<Session[]> {
+    return [...this.read().sessions].reverse()
+  }
+
+  /**
+   * Arrival order, because that is the order the transcript was written in.
+   *
+   * Filtering the one array keeps the order and scopes the rows to one session, which is the whole of a
+   * read: it needs no queue. `serialize` exists so two read-modify-writes cannot clobber each other, and
+   * a read that took the chain would queue behind a slow write for no correctness it could gain.
+   */
+  async listMessages(sessionId: string): Promise<Message[]> {
+    return this.read().messages.filter((message) => message.sessionId === sessionId)
+  }
+
   async appendMessage(input: NewMessage): Promise<Message> {
     return this.serialize(() => {
       const document = this.read()

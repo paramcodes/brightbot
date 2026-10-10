@@ -2,7 +2,7 @@ import type { CliRenderer } from "@opentui/core"
 import type { ReactNode } from "react"
 import { RootLayout } from "./components/layout/RootLayout.js"
 import { ToastProvider } from "./components/toast/ToastProvider.js"
-import { ThemeProvider, useTheme } from "./context/ThemeContext.js"
+import { PreferencesProvider, useTheme } from "./context/PreferencesContext.js"
 import type { ChatTransport } from "./core/chat/transport.js"
 import { ResponderProvider } from "./core/responder/useResponder.js"
 import { httpChatTransport } from "./lib/api-client.js"
@@ -19,14 +19,14 @@ export interface AppProps {
 /** Theme, route, keyboard chain, toasts: the four things every screen below depends on. */
 export function App({ onExit, chatTransport = httpChatTransport, children }: AppProps = {}) {
   return (
-    <ThemeProvider>
+    <PreferencesProvider>
       <MemoryRouterProvider>
         <ResponderProvider>
           <ThemedShell onExit={onExit} chatTransport={chatTransport} />
           {children}
         </ResponderProvider>
       </MemoryRouterProvider>
-    </ThemeProvider>
+    </PreferencesProvider>
   )
 }
 

@@ -1,4 +1,4 @@
-import type { ChatFrame, ChatRequest, NewSession, Session } from "@nightcode/shared"
+import type { ChatFrame, ChatRequest, Message, NewSession, Session } from "@nightcode/shared"
 import type { ChatTransport } from "../src/core/chat/transport.js"
 
 export const SCRIPTED_SESSION: Session = {
@@ -19,6 +19,10 @@ export interface ScriptedTransport {
   readonly release: () => void
   readonly created: NewSession[]
   readonly streamed: ChatRequest[]
+  /** What `listSessions` answered, one entry per call. The call takes no argument, so the answer is the record. */
+  readonly listed: Session[][]
+  /** Every id `listMessages` was asked about, in the order they were asked. */
+  readonly listedIds: string[]
 }
 
 export interface ScriptedTransportOptions {
@@ -26,6 +30,10 @@ export interface ScriptedTransportOptions {
   readonly parked?: boolean
   /** Park again after this many frames, and hold the stream open until the run is aborted. */
   readonly parkAfterFrames?: number
+  /** What `listSessions` answers, newest first as the store returns it. */
+  readonly sessions?: readonly Session[]
+  /** What `listMessages` answers for any session id. */
+  readonly messages?: readonly Message[]
 }
 
 /** How a real socket ends: the pending read settles once the signal fires, so the iterator finishes. */
@@ -40,7 +48,8 @@ function untilAborted(signal: AbortSignal): Promise<void> {
  * Parking it behind an explicit release is what lets a test prove the turn was on screen before the
  * server was ever reached, rather than proving it by looking at a frame the server already answered.
  * `parkAfterFrames` parks again part way through, which is the only way to stop a turn that has
- * already started answering without waiting for the answer to finish.
+ * already started answering without waiting for the answer to finish. The two reads never park: they
+ * are not the turn, and a history list that hung on a gate would prove nothing about a dialog.
  */
 export function scriptedTransport(
   frames: readonly ChatFrame[] = [{ type: "finish" }],
@@ -48,6 +57,10 @@ export function scriptedTransport(
 ): ScriptedTransport {
   const created: NewSession[] = []
   const streamed: ChatRequest[] = []
+  const listed: Session[][] = []
+  const listedIds: string[] = []
+  const sessions = options.sessions ?? []
+  const messages = options.messages ?? []
   const parked = options.parked ?? true
   const parkAfter = options.parkAfterFrames
   let open = (): void => {}
@@ -61,12 +74,22 @@ export function scriptedTransport(
   return {
     created,
     streamed,
+    listed,
+    listedIds,
     release: () => open(),
     transport: {
       async createSession(input) {
         await through()
         created.push(input)
         return { ...SCRIPTED_SESSION, title: input.title, model: input.model }
+      },
+      async listSessions() {
+        listed.push([...sessions])
+        return [...sessions]
+      },
+      async listMessages(sessionId) {
+        listedIds.push(sessionId)
+        return [...messages]
       },
       async stream(request, signal) {
         await through()

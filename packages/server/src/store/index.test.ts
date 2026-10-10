@@ -45,12 +45,29 @@ describe("the process store", () => {
 })
 
 describe("the prisma store", () => {
-  function fakeDatabase(): PrismaDatabase & { rows: SessionRow[]; messages: MessageRow[] } {
+  /** What the store handed the database, so a test reads the listing's own contract and not a guess. */
+  type FindManyCall = { orderBy?: { createdAt: "asc" | "desc" }; where?: { sessionId: string } }
+
+  function fakeDatabase(): PrismaDatabase & {
+    rows: SessionRow[]
+    messages: MessageRow[]
+    sessionFindMany: FindManyCall[]
+    messageFindMany: FindManyCall[]
+  } {
     const rows: SessionRow[] = []
     const messages: MessageRow[] = []
+    const sessionFindMany: FindManyCall[] = []
+    const messageFindMany: FindManyCall[] = []
+    // The clock the database owns, one second per row in its own table. Rows sharing one timestamp would
+    // make a sort on `createdAt` a stable-sort artefact rather than an ordering, and row zero in either
+    // table stays at the epoch the tests below assert literally.
+    const sessionClock = (): Date => new Date(Date.UTC(2026, 9, 9) + 1000 * rows.length)
+    const messageClock = (): Date => new Date(Date.UTC(2026, 9, 9) + 1000 * messages.length)
     return {
       rows,
       messages,
+      sessionFindMany,
+      messageFindMany,
       user: {
         upsert: async (input) => input.create,
       },
@@ -61,13 +78,17 @@ describe("the prisma store", () => {
             userId: input.data.userId,
             title: input.data.title,
             model: input.data.model,
-            createdAt: new Date("2026-10-09T00:00:00.000Z"),
-            updatedAt: new Date("2026-10-09T00:00:00.000Z"),
+            createdAt: sessionClock(),
+            updatedAt: sessionClock(),
           }
           rows.push(row)
           return row
         },
         findUnique: async (input) => rows.find((row) => row.id === input.where.id) ?? null,
+        findMany: async (input) => {
+          sessionFindMany.push(input ?? {})
+          return [...rows].sort((one, two) => two.createdAt.getTime() - one.createdAt.getTime())
+        },
       },
       message: {
         create: async (input) => {
@@ -77,10 +98,16 @@ describe("the prisma store", () => {
             role: input.data.role,
             content: input.data.content,
             status: input.data.status,
-            createdAt: new Date("2026-10-09T00:00:00.000Z"),
+            createdAt: messageClock(),
           }
           messages.push(row)
           return row
+        },
+        findMany: async (input) => {
+          messageFindMany.push(input)
+          return messages
+            .filter((row) => row.sessionId === input.where.sessionId)
+            .sort((one, two) => one.createdAt.getTime() - two.createdAt.getTime())
         },
       },
     }
@@ -135,5 +162,38 @@ describe("the prisma store", () => {
     })
     expect(second.id).not.toBe(message.id)
     expect(database.messages.map((row) => row.status)).toEqual(["interrupted", "complete"])
+  })
+
+  test("listSessions asks for newest first and maps every row through the port's shape", async () => {
+    const database = fakeDatabase()
+    const store = new PrismaStore(database)
+    const first = await store.createSession({ title: "First", model: "claude-sonnet-5" })
+    const second = await store.createSession({ title: "Second", model: "gpt-5" })
+
+    expect(await store.listSessions()).toEqual([
+      { ...second, createdAt: "2026-10-09T00:00:01.000Z", updatedAt: "2026-10-09T00:00:01.000Z" },
+      { ...first, createdAt: "2026-10-09T00:00:00.000Z", updatedAt: "2026-10-09T00:00:00.000Z" },
+    ])
+    expect(database.sessionFindMany).toEqual([{ orderBy: { createdAt: "desc" } }])
+  })
+
+  test("listMessages asks for one session's rows in arrival order, and returns none for another's", async () => {
+    const database = fakeDatabase()
+    const store = new PrismaStore(database)
+    const one = await store.createSession({ title: "One", model: "claude-sonnet-5" })
+    const two = await store.createSession({ title: "Two", model: "claude-sonnet-5" })
+    const early = await store.appendMessage({ sessionId: one.id, role: "user", content: "first", status: "complete" })
+    await store.appendMessage({ sessionId: two.id, role: "user", content: "not mine", status: "complete" })
+    const late = await store.appendMessage({ sessionId: one.id, role: "assistant", content: "second", status: "complete" })
+
+    expect(await store.listMessages(one.id)).toEqual([
+      { ...early, createdAt: "2026-10-09T00:00:00.000Z" },
+      { ...late, createdAt: "2026-10-09T00:00:02.000Z" },
+    ])
+    expect(await store.listMessages(two.id)).toHaveLength(1)
+    expect(database.messageFindMany).toEqual([
+      { where: { sessionId: one.id }, orderBy: { createdAt: "asc" } },
+      { where: { sessionId: two.id }, orderBy: { createdAt: "asc" } },
+    ])
   })
 })

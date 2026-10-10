@@ -30,6 +30,16 @@ export class PrismaStore implements Store {
     return row === null ? null : toSession(row)
   }
 
+  async listSessions(): Promise<Session[]> {
+    const rows = await this.db.session.findMany({ orderBy: { createdAt: "desc" } })
+    return rows.map(toSession)
+  }
+
+  async listMessages(sessionId: string): Promise<Message[]> {
+    const rows = await this.db.message.findMany({ where: { sessionId }, orderBy: { createdAt: "asc" } })
+    return rows.map(toMessage)
+  }
+
   async appendMessage(input: NewMessage): Promise<Message> {
     const row = await this.db.message.create({
       data: {
