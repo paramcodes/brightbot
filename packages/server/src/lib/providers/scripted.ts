@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { TokenUsage } from "@nightcode/shared"
 import type { Model, ModelEvent, ModelRequest } from "../ai.js"
 
@@ -7,6 +8,8 @@ export interface ScriptedOptions {
   readonly reply?: string
   readonly reasoning?: string
   readonly delayMs?: number
+  /** Set to null to silence the call, or to a pair to force one, so a test names what it wants. */
+  readonly toolCall?: { readonly toolName: string; readonly input: unknown } | null
 }
 
 export interface ScriptedSettings {
@@ -60,15 +63,47 @@ export function estimateUsage(prompt: string, said: string): TokenUsage {
 }
 
 /**
+ * What the scripted model asks for as a tool call, and the JSON input it asks with.
+ *
+ * Pure, so the loop can be driven by a test that hands it the environment it wants. A name the tool
+ * set does not carry yields no call, which is how a caller proves that a mode with no write tools
+ * never gets one.
+ */
+export function resolveScriptedToolCall(environment: Record<string, string | undefined>): { toolName: string; input: unknown } | null {
+  const toolName = environment.NIGHTCODE_SCRIPTED_TOOL_CALL
+  if (toolName === undefined || toolName.length === 0) return null
+  let input: unknown = {}
+  const raw = environment.NIGHTCODE_SCRIPTED_TOOL_INPUT
+  if (raw !== undefined && raw.length > 0) {
+    try {
+      input = JSON.parse(raw)
+    } catch {
+      // A malformed input is the caller's mistake and the call still happens, because the point of
+      // the knob is to drive the loop rather than to validate the caller's JSON.
+    }
+  }
+  return { toolName, input }
+}
+
+/**
  * The local default: no SDK import, no secret, no network. The pause is cancelled by the signal rather
  * than left to expire, so an abort lands between words instead of after the reply.
  */
 export function scriptedModel(options: ScriptedOptions = {}): Model {
   const settings = resolveScriptedOptions(process.env, options)
+  const toolCall = options.toolCall === undefined ? resolveScriptedToolCall(process.env) : options.toolCall
   return {
     name: "scripted",
     async *stream(request: ModelRequest): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
-      const prompt = request.messages.map((message) => message.content).join("")
+      // A tool call only happens on the round that asked the question. The round that was just
+      // handed a result is answered, because that is what a model that received a result does, and
+      // checking the transcript rather than a counter is what makes a loop of any length work.
+      const awaitingResult = request.messages.some((message) => message.role === "tool")
+      if (toolCall !== null && !awaitingResult) {
+        yield { type: "tool-call", toolCallId: `scripted-${randomUUID()}`, ...toolCall }
+        return estimateUsage(request.messages.map((message) => ("content" in message ? message.content : "")).join(""), "")
+      }
+      const prompt = request.messages.map((message) => ("content" in message ? message.content : "")).join("")
       for (const type of ["reasoning", "text"] as const) {
         const text = type === "reasoning" ? settings.reasoning : settings.reply
         const words = chunks(text)

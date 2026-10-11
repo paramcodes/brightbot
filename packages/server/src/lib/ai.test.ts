@@ -6,6 +6,7 @@ const REQUEST: ModelRequest = {
   model: "scripted",
   messages: [{ role: "user", content: "hello" }],
   system: "the system prompt the model is handed",
+  tools: ["read_file", "list_directory", "glob", "grep"],
   signal: new AbortController().signal,
 }
 

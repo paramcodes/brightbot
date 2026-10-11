@@ -33,6 +33,13 @@ export interface ScriptedTransportOptions {
   readonly parked?: boolean
   /** Park again after this many frames, and hold the stream open until the run is aborted. */
   readonly parkAfterFrames?: number
+  /**
+   * Answer each call to `stream` from the next batch, in order, instead of replaying one list.
+   *
+   * An agent loop posts once per round, so a transport that answered the same frames forever would
+   * loop until the cap. A batch per call is what lets a test name what each round returns.
+   */
+  readonly batches?: readonly (readonly ChatFrame[])[]
   /** What `listSessions` answers, newest first as the store returns it. */
   readonly sessions?: readonly Session[]
   /** What `listMessages` answers for any session id. */
@@ -71,6 +78,8 @@ export function scriptedTransport(
   const messages = options.messages ?? []
   const parked = options.parked ?? true
   const parkAfter = options.parkAfterFrames
+  const batches = options.batches ?? [frames]
+  let batch = 0
   let open = (): void => {}
   const gate = new Promise<void>((resolve) => {
     open = resolve
@@ -103,9 +112,13 @@ export function scriptedTransport(
       async stream(request, signal) {
         await through()
         streamed.push(request)
+        // The last batch repeats, so a loop that keeps asking after the test ran out of answers ends
+        // on an empty one instead of hanging on a promise nothing will settle.
+        const answer = batches[Math.min(batch, batches.length - 1)] ?? frames
+        batch += 1
         return {
           async *[Symbol.asyncIterator]() {
-            for (const [index, frame] of frames.entries()) {
+            for (const [index, frame] of answer.entries()) {
               if (signal.aborted) return
               yield frame
               if (parkAfter !== undefined && index === parkAfter - 1) await untilAborted(signal)

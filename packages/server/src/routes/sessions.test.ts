@@ -52,6 +52,7 @@ async function ask(sessionId: string, content: string): Promise<void> {
       sessionId,
       messages: [{ role: "user", content }],
       system: "the system prompt the turn was sent with",
+      tools: ["read_file"],
     }),
   })
   expect(response.status).toBe(200)

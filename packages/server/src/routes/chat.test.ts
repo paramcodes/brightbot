@@ -75,6 +75,7 @@ function post(baseUrl: string, sessionId: string, signal?: AbortSignal): Promise
       sessionId,
       messages: [{ role: "user", content: "hi there" }],
       system: "the system prompt the client chose",
+      tools: ["read_file", "list_directory", "glob", "grep"],
     }),
     signal,
   })
@@ -134,6 +135,17 @@ async function assistantRow(): Promise<StoreRow> {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
   throw new Error("The assistant row was never persisted")
+}
+
+/** Every row for one session, once the last of them has landed. */
+async function sessionRows(sessionId: string, count: number): Promise<StoreRow[]> {
+  const deadline = Date.now() + 5000
+  while (Date.now() < deadline) {
+    const rows = readRows().filter((row) => row.sessionId === sessionId)
+    if (rows.length >= count) return rows
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`The session kept ${readRows().filter((row) => row.sessionId === sessionId).length} rows instead of ${count}`)
 }
 
 describe("POST /api/chat", () => {
@@ -369,7 +381,7 @@ describe("POST /api/chat", () => {
       ])
     })
 
-    rmSync(home, { force: true })
+    rmSync(home, { recursive: true, force: true })
   })
 
   test("a request with no system prompt is refused with the 400 envelope", async () => {
@@ -418,8 +430,12 @@ describe("POST /api/chat", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId: "any",
-        messages: [{ role: "assistant", content: "not a turn" }],
+        messages: [
+          { role: "user", content: "hi there" },
+          { role: "assistant", content: "not a turn" },
+        ],
         system: "the system prompt the client chose",
+        tools: ["read_file"],
       }),
     })
 
@@ -427,6 +443,90 @@ describe("POST /api/chat", () => {
     const body = (await response.json()) as ApiErrorBody
     expect(body.error.code).toBe("BAD_REQUEST")
     expect(body.error.message).toContain("The last message must come from the user")
+  })
+
+  test("a tool call reaches the wire", async () => {
+    const session = await createSession()
+
+    await withServer(app.fetch, async (baseUrl) => {
+      process.env.NIGHTCODE_SCRIPTED_TOOL_CALL = "read_file"
+      process.env.NIGHTCODE_SCRIPTED_TOOL_INPUT = JSON.stringify({ path: "README.md" })
+      try {
+        const response = await post(baseUrl, session.id)
+        expect(response.status).toBe(200)
+        const frames = await collect(response)
+
+        expect(frames).toContainEqual({
+          type: "tool-call",
+          toolCallId: expect.any(String),
+          toolName: "read_file",
+          input: { path: "README.md" },
+        })
+      } finally {
+        delete process.env.NIGHTCODE_SCRIPTED_TOOL_CALL
+        delete process.env.NIGHTCODE_SCRIPTED_TOOL_INPUT
+      }
+    })
+
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  test("a tool round writes no user row and the model is handed the result", async () => {
+    const seen: string[][] = []
+    const answering: Model = {
+      name: "answering",
+      async *stream(request): AsyncGenerator<ModelEvent, TokenUsage | undefined> {
+        seen.push(request.messages.map((message) => message.role))
+        const answered = request.messages.some((message) => message.role === "tool")
+        yield { type: "text", text: answered ? "i read it" : "let me look" }
+        if (!answered) yield { type: "tool-call", toolCallId: "call-1", toolName: "read_file", input: { path: "README.md" } }
+        return undefined
+      },
+    }
+    const session = await createSession()
+
+    await withServer(
+      new Hono().use("/api/*", requireAuth(localAuthProvider({ secret: SECRET }))).route(
+        "/api/chat",
+        createChatRoute(() => answering),
+      ).fetch,
+      async (baseUrl) => {
+        const first = await post(baseUrl, session.id)
+        expect(await collect(first)).toContainEqual({
+          type: "tool-call",
+          toolCallId: "call-1",
+          toolName: "read_file",
+          input: { path: "README.md" },
+        })
+
+        const second = await fetch(`${baseUrl}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: session.id,
+            messages: [
+              { role: "user", content: "read the readme" },
+              { role: "tool", toolCallId: "call-1", toolName: "read_file", input: { path: "README.md" }, output: "# Night Code", ok: true },
+            ],
+            system: "the system prompt the client chose",
+            tools: ["read_file"],
+          }),
+        })
+        expect(second.status).toBe(200)
+        expect(await collect(second)).toEqual([{ type: "text", text: "i read it" }, { type: "finish" }])
+
+        // The tool round writes no user row of its own, so the transcript stays the developer's words.
+        const rows = await sessionRows(session.id, 3)
+        expect(rows.map((row) => row.role)).toEqual(["user", "assistant", "assistant"])
+        expect(rows[1]?.content).toBe("let me look")
+        expect(rows[2]?.content).toBe("i read it")
+      },
+    )
+
+    // The transcript is the client's to build, so what the model is handed is exactly what the
+    // loop posted: the ask, then the ask plus the tool round.
+    expect(seen).toEqual([["user"], ["user", "tool"]])
+    rmSync(home, { recursive: true, force: true })
   })
 
   test("an unknown session is refused with the 404 envelope", async () => {
@@ -437,6 +537,7 @@ describe("POST /api/chat", () => {
         sessionId: "missing",
         messages: [{ role: "user", content: "hi there" }],
         system: "the system prompt the client chose",
+        tools: ["read_file"],
       }),
     })
 
