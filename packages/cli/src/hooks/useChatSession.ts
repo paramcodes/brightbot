@@ -307,8 +307,17 @@ export function useChatSession(transport: ChatTransport, options: ChatSessionOpt
     return { accepted: true }
   }
 
+  const forgetPermissions = (): void => {
+    // A session-scoped decision dies with its session. `/clear` and a resume both start a new
+    // conversation, and a permission granted in the old one would otherwise silently widen the first
+    // write of the new one.
+    alwaysAllowed.current = new Set()
+    setConfirmation(null)
+  }
+
   const reset = (): void => {
     stream.abort()
+    forgetPermissions()
     generation.current += 1
     setMessages([])
     setSessionId(null)
@@ -319,6 +328,7 @@ export function useChatSession(transport: ChatTransport, options: ChatSessionOpt
     // what keeps a run still unwinding from the previous conversation from writing its session id back
     // over the one just resumed.
     stream.abort()
+    forgetPermissions()
     generation.current += 1
     setMessages(toChatMessages(rows))
     setSessionId(session.id)

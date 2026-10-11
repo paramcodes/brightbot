@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ToolCall } from "@nightcode/shared"
 import { ensureParent, exists, isDirectory, readText, resolveWithin, toolRoot, writeText } from "./fs-utils.js"
-import { executeTool, matchGlob } from "./local-tools.js"
+import { executeTool, MAX_FILE_CHARS, matchGlob } from "./local-tools.js"
 
 function call(toolName: string, input: unknown): ToolCall {
   return { toolCallId: randomUUID(), toolName, input }
@@ -183,6 +183,38 @@ describe("executeTool", () => {
     expect(result.ok).toBe(true)
     expect(result.output).toContain("out")
     expect(result.output).toContain("err")
+  })
+
+  test("bash answers outright when the command held no background process", async () => {
+    const result = await executeTool(call("bash", { command: "echo done" }), root)
+    expect(result.ok).toBe(true)
+    expect(result.output).toBe("done")
+  })
+
+  test("bash reports a command that left its pipe open instead of hanging on it", async () => {
+    // The shell exits immediately, so the process-side timeout never fires. What is under test is
+    // the drain: a background child holds the pipe, and the turn must end rather than wait on it.
+    const home = mkdtempSync(join(tmpdir(), "nightcode-bg-"))
+    try {
+      writeFileSync(join(home, "marker"), "x")
+      const result = await executeTool(call("bash", { command: "echo started; sleep 30 &" }), home)
+      expect(result.ok).toBe(true)
+      expect(result.output).toContain("started")
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  test("grep returns a line that cannot carry a whole file back", async () => {
+    const blob = `${"a".repeat(500_000)}needle`
+    writeFileSync(join(root, "src/blob.txt"), `${blob}\n`)
+    const result = await executeTool(call("grep", { pattern: "needle" }), root)
+    expect(result.ok).toBe(true)
+    // A binary file with no newline in it is one line, and that line must not reach the model whole.
+    expect(result.output).toContain("[truncated at")
+    // The body is capped at `MAX_FILE_CHARS`, so a single line carries at most that much text plus the
+    // marker that says it was capped.
+    expect(result.output.length).toBeLessThan(MAX_FILE_CHARS + 200)
   })
 
   test("a tool that does not exist is refused", async () => {

@@ -28,7 +28,7 @@ export const TOOL_TIMEOUT_MS = 30_000
  * The cap is applied after the read rather than by a partial read, so a truncated file still says it
  * was truncated instead of pretending to be short.
  */
-const MAX_FILE_CHARS = 200_000
+export const MAX_FILE_CHARS = 200_000
 
 /** A result that carries a refusal. The model is told, so it can ask differently. */
 function refused(run: ToolCall, why: string): ToolResult {
@@ -234,10 +234,37 @@ function grepTool(root: string, call: ToolCall, input: Record<string, unknown>):
     }
     for (const [index, line] of text.split("\n").entries()) {
       if (hits.length >= MAX_TOOL_ROWS) break
-      if (expression.test(line)) hits.push(`${file}:${index + 1}:${line}`)
+      if (expression.test(line)) hits.push(`${file}:${index + 1}:${truncated(line)}`)
     }
   }
   return answered(call, hits.length === 0 ? "no match" : `${hits.join("\n")}\n[${hits.length} ${hits.length === 1 ? "line" : "lines"}]`)
+}
+
+/**
+ * Reads a stream to the end, or gives up at the deadline and reports what arrived before it.
+ *
+ * A command that left a background process behind holds its pipe open after the shell exits, so the
+ * exit settles immediately and the read would otherwise hang the turn on a developer server. The
+ * reader is cancelled on the way out, because an abandoned read leaves a promise nothing will settle
+ * and a process that never drains.
+ */
+async function drain(stream: ReadableStream<Uint8Array>, milliseconds = TOOL_TIMEOUT_MS): Promise<string> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  const chunks: string[] = []
+  const deadline = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), milliseconds))
+  try {
+    while (true) {
+      const next = await Promise.race([reader.read(), deadline])
+      if (next === "timeout" || next.done) break
+      chunks.push(decoder.decode(next.value, { stream: true }))
+    }
+  } finally {
+    // Racing a read against a timer leaves the read pending, so it is cancelled here rather than left
+    // for the process to clean up.
+    await reader.cancel().catch(() => {})
+  }
+  return chunks.join("")
 }
 
 function bashTool(root: string, call: ToolCall, input: Record<string, unknown>): Promise<ToolResult> {
@@ -250,9 +277,15 @@ function bashTool(root: string, call: ToolCall, input: Record<string, unknown>):
     const timer = setTimeout(() => child.kill(), TOOL_TIMEOUT_MS)
     void child.exited.then(async () => {
       clearTimeout(timer)
-      const out = await new Response(child.stdout).text()
-      const err = await new Response(child.stderr).text()
-      const combined = `${out}${err}`.trim()
+      // The exit settles when the shell does, and a command that left a background process behind
+      // holds its pipe open after that. Draining without a deadline would hang the turn on a
+      // developer server, so the drain is bounded and its silence is reported rather than swallowed.
+      const out = await drain(child.stdout)
+      const err = await drain(child.stderr)
+      const partial = out.length === 0 && err.length === 0
+      const combined = [...[out, err], ...(partial ? ["[the command left a process running, so its output was not collected]"] : [])]
+        .join("")
+        .trim()
       const code = child.exitCode ?? 0
       const body = combined.length > 0 ? combined : `exited ${code}`
       settle(code === 0 ? answered(call, body) : refused(call, `exited ${code}\n${body}`))
