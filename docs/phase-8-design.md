@@ -149,6 +149,25 @@ picker deliberately hides.
 - No live provider call. The adapters gain the tool arm and the route is proved against an injected
   `Model`, which is the standard the existing route tests already hold them to.
 
+## Regression lane against trunk
+
+Every behaviour change the diff makes, and which of them are the feature.
+
+| change | file | verdict |
+| --- | --- | --- |
+| a turn with no tool call produces the same frames in the same order | `relayTurn` | intended, no change |
+| the credits gate now runs once per round of a multi-round turn | `routes/chat.ts` | intended. A caller cannot run a paid loop past a zero balance, and gating only the first round would let them |
+| a tool round writes no user row, so the persisted transcript is shorter than the stream | `routes/chat.ts` | intended. The mechanism is not the conversation |
+| `escape` during a confirmation denies it instead of interrupting the turn | `RootLayout.tsx` | intended. A prompt whose answer never arrives would hang the turn |
+| the composer unfocuses while a confirmation is up | `RootLayout.tsx` | intended, same shape as every other modal |
+| the request now requires `tools`, so a caller that sent neither is refused with a 400 | `schemas/chat.ts` | intended. A missing field was being read as "offer nothing" |
+| `always` is forgotten on `/clear` and on resume | `useChatSession.ts` | defect found and fixed in this phase, not a change from trunk |
+| a command that left a background process behind no longer hangs the turn | `local-tools.ts` | defect found and fixed in this phase |
+| `grep` no longer returns one unbounded line | `local-tools.ts` | defect found and fixed in this phase |
+
+A turn with no tool call is byte-identical to trunk on the wire, because `tools` is the only field the
+route reads and an answer that calls nothing never emits a frame the union did not already carry.
+
 ## What this phase left behind
 
 - The tool round is not persisted, so resuming a session mid-conversation loses the calls that got
