@@ -4,6 +4,15 @@ An open-source terminal coding agent. Night Code runs in your terminal, reads an
 your working directory, and streams model output token by token. The backend is a stateless relay;
 execution authority stays on your machine.
 
+![Night Code reading a file, then answering](docs/media/demo.png)
+
+<details>
+<summary>Watch the whole flow as a recording</summary>
+
+![Night Code: a prompt, a tool call, and the answer that follows it](docs/media/demo.gif)
+
+</details>
+
 <!-- FEATURE-MAP:START -->
 
 | Phase | Focus | Commits | Status | Issue |
