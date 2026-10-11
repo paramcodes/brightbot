@@ -5,7 +5,7 @@ import { dracula } from "../../styles/theme.js"
 import { MessageList } from "./MessageList.js"
 
 function message(overrides: Partial<ChatMessage>): ChatMessage {
-  return { id: "m1", role: "assistant", content: "", reasoning: "", status: "complete", error: null, ...overrides }
+  return { id: "m1", role: "assistant", content: "", reasoning: "", status: "complete", error: null, toolRuns: [], ...overrides }
 }
 
 const TRANSCRIPT: readonly ChatMessage[] = [

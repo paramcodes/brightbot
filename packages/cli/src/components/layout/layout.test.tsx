@@ -35,7 +35,7 @@ describe("Header", () => {
 })
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
-  return { id: "m1", role: "assistant", content: "", reasoning: "", status: "complete", error: null, ...overrides }
+  return { id: "m1", role: "assistant", content: "", reasoning: "", status: "complete", error: null, toolRuns: [], ...overrides }
 }
 
 describe("headerStatus", () => {

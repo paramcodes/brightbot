@@ -21,6 +21,7 @@ import { HomeView } from "../../views/HomeView.js"
 import { SessionView } from "../../views/SessionView.js"
 import { CommandMenu } from "../command-menu/CommandMenu.js"
 import type { Command } from "../command-menu/commands.js"
+import { ConfirmToolDialog } from "../dialogs/ConfirmToolDialog.js"
 import { ModelSelectDialog } from "../dialogs/ModelSelectDialog.js"
 import { SessionListDialog } from "../dialogs/SessionListDialog.js"
 import { UpgradeDialog } from "../dialogs/UpgradeDialog.js"
@@ -134,6 +135,12 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     if (token !== "escape") return
     // The unhandled fallback rather than a responder layer: a layer registered while a turn streams
     // sits above the command palette's, so Escape would kill the turn instead of closing the menu.
+    // A confirmation the loop is waiting on is the one thing that outranks the interrupt, because a
+    // prompt whose answer never arrives would hang the turn instead of stopping it.
+    if (chat.confirmation !== null) {
+      chat.decide("deny")
+      return
+    }
     if (chat.generating) {
       chat.abort()
       return
@@ -242,7 +249,8 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
   // Both modals take the printable keys the composer would otherwise eat, so both unfocus it. The
   // keyed remount is what the palette always needed: the slash that opened it was consumed, so the
   // composer's value never changes and React would leave the text in place.
-  const modalOpen = menuOpen || modelsOpen || sessionsOpen || usageOpen || upgradeOpen
+  // The confirmation is a modal too, so the composer unfocuses and remounts behind it the same way.
+  const modalOpen = menuOpen || modelsOpen || sessionsOpen || usageOpen || upgradeOpen || chat.confirmation !== null
 
   const submit = (prompt: string) => {
     // The model the user picked has to reach the turn, or the picker changes a label and nothing
@@ -382,6 +390,7 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
           onClose={closeUsage}
         />
       ) : null}
+      {chat.confirmation !== null ? <ConfirmToolDialog theme={theme} confirmation={chat.confirmation} onDecide={chat.decide} /> : null}
       {upgradeOpen ? (
         <UpgradeDialog theme={theme} balance={credits.balance} onConfirm={requestTopUp} onClose={() => setUpgradeOpen(false)} />
       ) : null}

@@ -4,6 +4,7 @@ import type { Theme } from "../../styles/theme.js"
 import { syntaxStyle } from "./markdown-style.js"
 import { Spinner } from "./Spinner.js"
 import { ThinkingBlock } from "./ThinkingBlock.js"
+import { ToolCallBlock } from "./ToolCallBlock.js"
 
 export interface BotMessageProps {
   theme: Theme
@@ -38,6 +39,7 @@ export function BotMessage({ theme, message }: BotMessageProps) {
     <box flexDirection="column" borderStyle="rounded" borderColor={theme.border} paddingX={1} marginBottom={1}>
       <text fg={theme.accentAlt}>nightcode</text>
       {message.reasoning.length > 0 ? <ThinkingBlock theme={theme} reasoning={message.reasoning} live={streaming} /> : null}
+      {message.toolRuns.length > 0 ? <ToolCallBlock theme={theme} runs={message.toolRuns} /> : null}
       {message.content.length > 0 ? (
         <markdown content={message.content} syntaxStyle={style} fg={theme.fg} streaming={streaming} />
       ) : streaming ? (
