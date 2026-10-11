@@ -47,7 +47,14 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport()
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("hello there", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("hello there", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: true,
     })
     await settle(setup)
@@ -66,7 +73,12 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("what is it", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("what is it", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[the answer is 42]"))
 
@@ -78,7 +90,12 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "text", text: "done" }, { type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("go", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("go", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[done]"))
 
@@ -94,7 +111,12 @@ describe("useChatSession", () => {
     ])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("go", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("go", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("The model failed to answer this turn"))
 
@@ -106,10 +128,24 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("first", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("first", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: true,
     })
-    expect(current().submit("second", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("second", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: false,
       reason: "A turn is already running",
     })
@@ -130,7 +166,12 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("rename the readme button", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("rename the readme button", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -138,7 +179,14 @@ describe("useChatSession", () => {
     expect(current().sessionId).toBe("session-scripted")
 
     scripted.release()
-    expect(current().submit("and the docs", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("and the docs", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: true,
     })
     await untilSettled(setup, () => frame(setup).includes("and the docs"))
@@ -152,7 +200,12 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("switch me to opus", { model: "claude-opus-4-5", system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("switch me to opus", {
+      model: "claude-opus-4-5",
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -164,11 +217,21 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("what is it", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("what is it", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[the answer is 42]"))
 
-    current().submit("and now?", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("and now?", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     await untilSettled(setup, () => scripted.streamed.length === 2)
 
     expect(scripted.streamed[1]).toEqual({
@@ -179,6 +242,7 @@ describe("useChatSession", () => {
         { role: "user", content: "and now?" },
       ],
       system: SUBMITTED_SYSTEM,
+      tools: ["read_file", "list_directory", "glob", "grep"],
     })
     setup.renderer.destroy()
   })
@@ -189,7 +253,12 @@ describe("useChatSession", () => {
     })
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("stop me partway", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("stop me partway", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("[half an ]"))
 
@@ -200,7 +269,14 @@ describe("useChatSession", () => {
     // which is why the status rather than the content is what marks the turn.
     expect(frame(setup)).toContain("assistant interrupted [half an ] [weighing ]")
     expect(frame(setup)).toContain("settled")
-    expect(current().submit("and now", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("and now", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: true,
     })
     setup.renderer.destroy()
@@ -210,7 +286,12 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport([{ type: "finish" }])
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    current().submit("something", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })
+    current().submit("something", {
+      model: SUBMITTED_MODEL,
+      system: SUBMITTED_SYSTEM,
+      user: SUBMITTED_USER,
+      tools: ["read_file", "list_directory", "glob", "grep"],
+    })
     scripted.release()
     await untilSettled(setup, () => frame(setup).includes("assistant complete"))
 
@@ -227,7 +308,14 @@ describe("useChatSession", () => {
     const scripted = scriptedTransport(ANSWER_FRAMES)
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
-    expect(current().submit("first", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("first", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: true,
     })
 
@@ -329,7 +417,14 @@ describe("resume", () => {
 
     // The session already exists, so no second one is created: this is the whole of what "resume"
     // means for a session id, and the transcript the next turn sends proves it rather than a flag.
-    expect(current().submit("and the third", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER })).toEqual({
+    expect(
+      current().submit("and the third", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
+    ).toEqual({
       accepted: true,
     })
     await untilSettled(setup, () => scripted.streamed.length === 1)
@@ -353,7 +448,12 @@ describe("resume", () => {
     const setup = await renderTui(<Probe transport={scripted.transport} />)
 
     expect(
-      current().submit("a question that is still running", { model: SUBMITTED_MODEL, system: SUBMITTED_SYSTEM, user: SUBMITTED_USER }),
+      current().submit("a question that is still running", {
+        model: SUBMITTED_MODEL,
+        system: SUBMITTED_SYSTEM,
+        user: SUBMITTED_USER,
+        tools: ["read_file", "list_directory", "glob", "grep"],
+      }),
     ).toEqual({
       accepted: true,
     })

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { AuthUser, ChatRequest, Message, Session } from "@nightcode/shared"
+import type { AuthUser, ChatRequest, Message, Session, ToolName } from "@nightcode/shared"
 import { useRef, useState } from "react"
 import type { ChatTransport } from "../core/chat/transport.js"
 import type { ChatMessage, ChatMessageStatus } from "../core/chat/types.js"
@@ -18,11 +18,13 @@ export type SubmitOutcome = { readonly accepted: true } | { readonly accepted: f
  * Every field is the client's own choice rather than server state: the model names a row of the shared
  * catalog, the system prompt is the mode's own text, and the identity is the CLI's own token. The
  * server resolves a provider from the session's model row, so the three travel separately on purpose.
+ * `tools` is what this mode may ask for, and the server offers exactly it.
  */
 export interface TurnContext {
   readonly model: string
   readonly system: string
   readonly user: AuthUser
+  readonly tools: readonly ToolName[]
 }
 
 export interface ChatSession {
@@ -108,7 +110,10 @@ export function useChatSession(transport: ChatTransport): ChatSession {
           if (generation.current !== started) return "interrupted"
           setSessionId(id)
         }
-        const frames = await transport.stream({ sessionId: id, messages: transcript([...messages, question]), system: turn.system }, signal)
+        const frames = await transport.stream(
+          { sessionId: id, messages: transcript([...messages, question]), system: turn.system, tools: turn.tools },
+          signal,
+        )
         for await (const frame of frames) {
           if (frame.type === "text") patch(answerId, (message) => ({ ...message, content: message.content + frame.text }))
           if (frame.type === "reasoning") patch(answerId, (message) => ({ ...message, reasoning: message.reasoning + frame.text }))

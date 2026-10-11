@@ -1,6 +1,7 @@
-import type { ChatFrame, ChatMessage, TokenUsage } from "@nightcode/shared"
-import { MODELS } from "@nightcode/shared"
-import type { ModelMessage } from "ai"
+import type { ChatFrame, ChatMessage, TokenUsage, ToolName } from "@nightcode/shared"
+import { MODELS, toolDescriptions, toolSchemas } from "@nightcode/shared"
+import type { ModelMessage, ToolSet } from "ai"
+import { tool } from "ai"
 import { anthropicModel } from "./providers/anthropic.js"
 import { openaiModel } from "./providers/openai.js"
 import { scriptedModel } from "./providers/scripted.js"
@@ -9,7 +10,10 @@ import { scriptedModel } from "./providers/scripted.js"
  * The two things a provider can emit while a turn is live. Nothing else crosses this boundary, so a
  * capability the phase does not have cannot be half-implemented in the fake.
  */
-export type ModelEvent = { readonly type: "reasoning"; readonly text: string } | { readonly type: "text"; readonly text: string }
+export type ModelEvent =
+  | { readonly type: "reasoning"; readonly text: string }
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "tool-call"; readonly toolCallId: string; readonly toolName: string; readonly input: unknown }
 
 export interface ModelRequest {
   /** The model the session asked for. The session row is the single source of which model answered. */
@@ -20,6 +24,11 @@ export interface ModelRequest {
    * provider that forgets to pass it through fails the typecheck instead of answering in no mode.
    */
   readonly system: string
+  /**
+   * What the caller can run. The server offers exactly this set, because a tool the CLI cannot
+   * execute is a tool the model will call and nothing will answer.
+   */
+  readonly tools: readonly ToolName[]
   /** Aborted by a client disconnect, so the provider stops pulling from its upstream. */
   readonly signal: AbortSignal
 }
@@ -74,6 +83,37 @@ export function resolveModel(environment: Record<string, string | undefined>, mo
 }
 
 /**
+ * The shared contracts as the tools the SDK will offer the model.
+ *
+ * Each definition is written out rather than built from a lookup, because a schema reached by a
+ * variable of type `ToolName` is a union of seven shapes and the SDK cannot infer its input through
+ * one. Writing them out keeps every definition's input type precise, which is what lets a provider
+ * validate what the model sent.
+ *
+ * A definition carries no `execute`, and that is the whole point of the phase: the executor is on the
+ * developer's machine and the server has none. The SDK therefore surfaces the call and stops, which
+ * is exactly the one step the client loop needs.
+ */
+const TOOL_DEFINITIONS: ToolSet = {
+  read_file: tool({ description: toolDescriptions.read_file, inputSchema: toolSchemas.read_file }),
+  write_file: tool({ description: toolDescriptions.write_file, inputSchema: toolSchemas.write_file }),
+  edit_file: tool({ description: toolDescriptions.edit_file, inputSchema: toolSchemas.edit_file }),
+  list_directory: tool({ description: toolDescriptions.list_directory, inputSchema: toolSchemas.list_directory }),
+  glob: tool({ description: toolDescriptions.glob, inputSchema: toolSchemas.glob }),
+  grep: tool({ description: toolDescriptions.grep, inputSchema: toolSchemas.grep }),
+  bash: tool({ description: toolDescriptions.bash, inputSchema: toolSchemas.bash }),
+}
+
+export function toolSet(names: readonly ToolName[]): ToolSet {
+  const offered: ToolSet = {}
+  for (const name of names) {
+    const definition = TOOL_DEFINITIONS[name]
+    if (definition) offered[name] = definition
+  }
+  return offered
+}
+
+/**
  * Exhaustive on purpose: a variant added to `ModelEvent` without a matching `ChatFrame` fails the
  * typecheck instead of falling through a `default` branch.
  */
@@ -83,6 +123,8 @@ export function toFrame(event: ModelEvent): ChatFrame {
       return { type: "reasoning", text: event.text }
     case "text":
       return { type: "text", text: event.text }
+    case "tool-call":
+      return { type: "tool-call", toolCallId: event.toolCallId, toolName: event.toolName, input: event.input }
     default: {
       const unhandled: never = event
       throw new Error(`No frame for the model event ${JSON.stringify(unhandled)}`)
@@ -92,20 +134,37 @@ export function toFrame(event: ModelEvent): ChatFrame {
 
 /**
  * The SDK's `ModelMessage` is keyed by a literal role, so `ChatMessage`'s union-typed `role` field has
- * to be spread across the three variants by hand. It lives here because both SDK adapters need the
- * same distribution.
+ * to be spread across the variants by hand. It lives here because both SDK adapters need the same
+ * distribution.
+ *
+ * A tool row becomes one `ToolModelMessage` carrying the result part that answers it, with the
+ * command's own output as `text` and a refusal or a failure as `error-text`. The SDK has a channel for
+ * a call that did not work, and using it means the model is told it was refused rather than handed a
+ * sentence it might read as the answer.
  */
 export function toModelMessages(messages: readonly ChatMessage[]): ModelMessage[] {
-  return messages.map(({ role, content }) => {
-    switch (role) {
+  return messages.map((message) => {
+    switch (message.role) {
       case "user":
-        return { role: "user", content }
+        return { role: "user", content: message.content }
       case "assistant":
-        return { role: "assistant", content }
+        return { role: "assistant", content: message.content }
       case "system":
-        return { role: "system", content }
+        return { role: "system", content: message.content }
+      case "tool":
+        return {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: message.toolCallId,
+              toolName: message.toolName,
+              output: message.ok ? { type: "text", value: message.output } : { type: "error-text", value: message.output },
+            },
+          ],
+        }
       default: {
-        const unhandled: never = role
+        const unhandled: never = message
         throw new Error(`No model message for the role ${JSON.stringify(unhandled)}`)
       }
     }

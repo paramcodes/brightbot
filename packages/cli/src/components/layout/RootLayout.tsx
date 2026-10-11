@@ -1,5 +1,5 @@
 import { cwd } from "node:process"
-import { type Session, systemPrompt } from "@nightcode/shared"
+import { type Session, systemPrompt, toolsForMode } from "@nightcode/shared"
 import type { CliRenderer, InputRenderable, KeyEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
@@ -250,7 +250,7 @@ export function RootLayout({ onExit, chatTransport }: RootLayoutProps) {
     // travels beside it, so the mode the header shows is the mode the model is told it is in. The
     // identity is the CLI's own token when it has one and the local user when it does not, which is
     // what lets `nightcode` answer a prompt with no credentials at all.
-    const outcome = chat.submit(prompt, { model, system: systemPrompt(mode), user: currentUser(tokenStore) })
+    const outcome = chat.submit(prompt, { model, system: systemPrompt(mode), user: currentUser(tokenStore), tools: toolsForMode(mode) })
     if (!outcome.accepted) {
       push({ kind: "warning", message: outcome.reason })
       return

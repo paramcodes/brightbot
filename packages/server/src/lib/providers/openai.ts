@@ -1,7 +1,7 @@
 import { openai } from "@ai-sdk/openai"
 import type { TokenUsage } from "@nightcode/shared"
 import { streamText } from "ai"
-import { type Model, type ModelEvent, type ModelRequest, toModelMessages } from "../ai.js"
+import { type Model, type ModelEvent, type ModelRequest, toModelMessages, toolSet } from "../ai.js"
 
 const DEFAULT_MODEL = "gpt-5"
 
@@ -17,12 +17,14 @@ export function openaiModel(modelName: string = resolveOpenAIModelName(process.e
         model: openai(request.model || modelName),
         system: request.system,
         messages: toModelMessages(request.messages),
+        tools: toolSet(request.tools),
         abortSignal: request.signal,
       })
-      // Tool calls arrive as `tool-*` parts and are out of this phase's scope.
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") yield { type: "text", text: part.text }
         else if (part.type === "reasoning-delta") yield { type: "reasoning", text: part.text }
+        else if (part.type === "tool-call")
+          yield { type: "tool-call", toolCallId: part.toolCallId, toolName: part.toolName, input: part.input }
       }
       const billed = await result.usage
       // The usage arrives with the `finish` part, and an aborted turn never reaches it, which is

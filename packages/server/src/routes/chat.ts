@@ -30,6 +30,9 @@ export type TurnResult =
  *
  * The signal is checked before every pull and once more after the loop, so a client that leaves during
  * the last chunk is still recorded as interrupted. An abort is never a failure.
+ *
+ * The accumulator is a switch rather than an `if/else` on `text`, so a variant added to `ModelEvent`
+ * without being accumulated here is a compile error instead of a silent append to the reasoning.
  */
 export async function relayTurn(
   events: AsyncIterable<ModelEvent>,
@@ -48,8 +51,22 @@ export async function relayTurn(
         break
       }
       const event = next.value
-      if (event.type === "text") content += event.text
-      else reasoning += event.text
+      switch (event.type) {
+        case "text":
+          content += event.text
+          break
+        case "reasoning":
+          reasoning += event.text
+          break
+        case "tool-call":
+          // A call is not prose, so it is written and not accumulated. What the CLI sends back is
+          // the tool result, and that travels on the request rather than on the stream.
+          break
+        default: {
+          const unhandled: never = event
+          throw new Error(`No accumulator for the model event ${JSON.stringify(unhandled)}`)
+        }
+      }
       await write(toFrame(event))
     }
   } catch (error) {
@@ -106,6 +123,7 @@ async function streamTurn(stream: SSEStreamingApi, turn: Turn, signal: AbortSign
       model: turn.session.model,
       messages: turn.body.messages,
       system: turn.body.system,
+      tools: turn.body.tools,
       signal,
     }),
     write,
@@ -161,7 +179,12 @@ export function createChatRoute(
       const turn = body.messages.at(-1)
       if (!turn) throw new ApiError(400, "The last message must come from the user")
 
-      await store.appendMessage({ sessionId: session.id, role: "user", content: turn.content, status: "complete" })
+      // Only the round that asked the question writes a user row. A tool round ends on a result, and
+      // writing the tool's output back as the developer's own words would put the CLI's words in their
+      // mouth. The conversation is persisted; the mechanism is not.
+      if (turn.role === "user") {
+        await store.appendMessage({ sessionId: session.id, role: "user", content: turn.content, status: "complete" })
+      }
 
       return streamSSE(
         c,
