@@ -197,14 +197,18 @@ describe("mention picker", () => {
     })
     await mention(setup)
     await type(setup, "packages/")
-    expect(selectedPath(setup, "packages/")).toBe("packages/cli/package.json")
+    // Whatever ranks first today, not a file named in the test. A row picked by the repo's layout
+    // makes this test fail the day anyone adds a file, which is a fact about the checkout rather
+    // than about the picker.
+    const top = selectedPath(setup, "packages/")
+    expect(top.length).toBeGreaterThan(0)
 
     await press(setup, ["UP"])
     // UP at the top is a no-op, and if it moved the selection off the list then the `return` below
     // would fall through to the composer's own submit binding and no path would ever be inserted.
-    expect(selectedPath(setup, "packages/")).toBe("packages/cli/package.json")
+    expect(selectedPath(setup, "packages/")).toBe(top)
     await press(setup, ["RETURN"])
-    expect(input?.value).toBe("packages/cli/package.json ")
+    expect(input?.value).toBe(`${top} `)
     setup.renderer.destroy()
   })
 

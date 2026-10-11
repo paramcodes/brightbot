@@ -4,6 +4,15 @@ An open-source terminal coding agent. Night Code runs in your terminal, reads an
 your working directory, and streams model output token by token. The backend is a stateless relay;
 execution authority stays on your machine.
 
+![Night Code reading a file, then answering](docs/media/demo.png)
+
+<details>
+<summary>Watch the whole flow as a recording</summary>
+
+![Night Code: a prompt, a tool call, and the answer that follows it](docs/media/demo.gif)
+
+</details>
+
 <!-- FEATURE-MAP:START -->
 
 | Phase | Focus | Commits | Status | Issue |
@@ -16,7 +25,7 @@ execution authority stays on your machine.
 | 6. Browser-to-CLI OAuth & User Security | PKCE, loopback server, browser login, restricted credential store, server-side auth. | 6.1, 6.2, 6.3, 6.4 | shipped | #29 |
 | 7. SaaS Monetization, Credit Metering & Rate Limiting | Credit ledger, gating middleware, token ingestion, `/usage` and `/upgrade` dialogs. | 7.1, 7.2, 7.3, 7.4 | shipped | #34 |
 | 8. Client-Side Tool Execution Engine | Shared tool schemas, local executors, client-side tool loop, confirmation, grouped rendering. | 8.1, 8.2, 8.3, 8.4, 8.5 | shipped | #39 |
-| 9. Distribution, Packaging & Production Polish | Binary entry point, container deploy config, AI review config, clean exit traps, live demo. | 9.1, 9.2, 9.3, 9.4 | planned | #45 |
+| 9. Distribution, Packaging & Production Polish | Binary entry point, container deploy config, AI review config, clean exit traps, live demo. | 9.1, 9.2, 9.3, 9.4 | shipped | #45 |
 
 <!-- FEATURE-MAP:END -->
 

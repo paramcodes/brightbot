@@ -1,0 +1,70 @@
+# The three rules this repo already enforces by hand, written down for the reviewer that reads every
+# pull request. Each one is a lesson that was learned once, and each is cheap to check mechanically and
+# expensive to rediscover.
+
+language: "en"
+
+reviews:
+  # A summary is noise on a repo this size; a request-changes that names the rule is not.
+  request_changes_workflow: true
+  high_level_summary: false
+  review_status: true
+
+  # The six rules below are the ones this project has actually been burned by. Path filters are the
+  # cheapest place to say "this file has an invariant", so each rule is scoped to where it applies
+  # rather than to the whole tree.
+  instructions:
+    - path: "**/*"
+      instructions: |
+        Tests assert observable behaviour against a literal expected value, and call the code the way
+        its users do. A test that would still pass when every import returns `undefined` is not a test
+        and should be deleted, not fixed. Assert on `frame(setup)` text or on a returned value, never
+        on a private helper's arguments.
+
+        Comments name a non-obvious why or they do not exist. A comment that restates the code, or that
+        narrates a phase ("Phase 1: add cards"), is a comment to delete. This applies to test files
+        and verify scripts as much as to source.
+
+        Every external dependency sits behind a port with a local default, and no code path may require
+        a secret to start. LLM provider, store, auth, and credits all boot with no credentials. If a
+        change adds a dependency, it needs the port, the local default, and the resolver that picks
+        between them from the environment.
+
+    - path: "packages/cli/src/**"
+      instructions: |
+        The responder chain sees control keys only. Printable characters belong to the focused editor,
+        and that single rule is what keeps a slash-command palette from firing while the user types. Do
+        not register a layer that consumes a letter, and do not reach for a responder layer where the
+        mention picker's `onKeyDown` pattern is the correct shape.
+
+        A modal must unfocus the composer and take its own layer id. Two layers sharing one id silently
+        replace each other. TUI JSX uses lowercase intrinsic tags with `jsxImportSource` pointing at
+        `@opentui/react`; there is no DOM and no `<div>`.
+
+        A headless test drives control keys through the kitty-encoding helpers, because the kitty parser
+        drops a bare `escape`, and calls `settle()` before reading a frame, because `flush()` alone does
+        not yield the event loop.
+
+    - path: "packages/shared/src/tools/**"
+      instructions: |
+        A tool contract is shared between the server, which instructs the model, and the CLI, which
+        runs the tool. A name the CLI cannot run must not be a name the schema accepts, and a
+        description must describe the schema it sits beside. A new tool needs its name, its input
+        schema, its description, and its executor, and it needs a test that each of the four exists.
+
+    - path: "packages/server/src/**"
+      instructions: |
+        Validate at the boundary with the shared zod schema, and trust the types inside. A route that
+        re-checks a field the schema already refined is a route with two answers to one question.
+
+        The credit gate runs before the stream opens, because a refusal that arrives as a chat frame
+        inside a 200 is a refusal the client renders as an answer.
+
+  # The paths that are generated or vendored, and where a comment about them is a comment about
+  # nothing. Kept explicit so the reviewer does not spend its budget on files nobody wrote.
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/generated/**"
+    - "!**/*.lock"
+    - "!**/*.tsbuildinfo"
+    - "!docs/**"

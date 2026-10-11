@@ -1,0 +1,39 @@
+# Builds and publishes the server image when master moves.
+#
+# It does not deploy. The plan is explicit that "deployment itself stays an operator action; the repo
+# ships the config, not the deploy", and a workflow that released to production on a merge would be a
+# release with no human in it. What this gives you is an image that exists and is tagged, so the
+# operator's release is one command rather than a build.
+name: deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/server
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image builds with no database and no model key, so this job needs no secret to run. The
+      # registry token is the only credential involved and it is the one the checkout step is given.
+      - name: Build
+        run: docker build -f packages/server/Dockerfile -t "$REGISTRY/$IMAGE_NAME:sha-${{ github.sha }}" .
+
+      - name: Sign in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish
+        run: |
+          docker push "$REGISTRY/$IMAGE_NAME:sha-${{ github.sha }}"
+          docker tag "$REGISTRY/$IMAGE_NAME:sha-${{ github.sha }}" "$REGISTRY/$IMAGE_NAME:latest"
+          docker push "$REGISTRY/$IMAGE_NAME:latest"

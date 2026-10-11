@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.up.railway.com/v2/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "packages/server/Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "bun run --cwd packages/server src/index.ts",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 30,
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  }
+}
