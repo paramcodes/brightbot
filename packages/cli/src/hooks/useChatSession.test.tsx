@@ -445,6 +445,41 @@ describe("the tool loop", () => {
     setup.renderer.destroy()
   })
 
+  test("a call that runs and fails is reported as a failure, not as a denial", async () => {
+    const home = mkdtempSync(join(tmpdir(), "nightcode-loop-"))
+    try {
+      const scripted = scriptedTransport([], {
+        batches: [
+          [{ type: "tool-call", toolCallId: "call-1", toolName: "read_file", input: { path: "absent.md" } }, { type: "finish" }],
+          ANSWER_ROUND,
+        ],
+        parked: false,
+      })
+      const setup = await renderTui(<Probe transport={scripted.transport} root={() => home} />)
+
+      current().submit("read something that is not there", turn())
+      await finished(setup)
+      await settle(setup)
+
+      // The refusal came from the machine, so the run is `failed` and the reason travels to the model.
+      // Calling it a denial would tell the user they pressed a key they never pressed.
+      const answer = current().messages[1]
+      expect(answer?.toolRuns[0]?.status).toBe("failed")
+      expect(answer?.toolRuns[0]?.output).toContain("no file at")
+      expect(scripted.streamed[1]?.messages).toContainEqual({
+        role: "tool",
+        toolCallId: "call-1",
+        toolName: "read_file",
+        input: { path: "absent.md" },
+        output: "no file at absent.md",
+        ok: false,
+      })
+      setup.renderer.destroy()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   test("a loop that never stops asking is stopped, and the turn says so", async () => {
     const calls = [
       { type: "tool-call" as const, toolCallId: "call-1", toolName: "read_file", input: { path: "README.md" } },

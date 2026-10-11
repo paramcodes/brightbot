@@ -21,6 +21,8 @@ function lineFor(run: ToolRun): string {
       return `${run.call.toolName} · denied`
     case "complete":
       return `${run.call.toolName} · ok${elapsed}`
+    case "failed":
+      return `${run.call.toolName} · failed${elapsed}`
     default: {
       const unhandled: never = run.status
       throw new Error(`No line for the tool status ${JSON.stringify(unhandled)}`)
@@ -60,7 +62,7 @@ export function ToolCallBlock({ theme, runs }: ToolCallBlockProps) {
  * palette would be the one part of the screen that ignored the user's theme choice.
  */
 function worst(theme: Theme, runs: readonly ToolRun[]): { state: string; color: string } {
-  if (runs.some((run) => run.status === "denied")) return { state: "denied", color: theme.error }
+  if (runs.some((run) => run.status === "failed" || run.status === "denied")) return { state: "failed", color: theme.error }
   if (runs.some((run) => run.status === "pending" || run.status === "awaiting-confirmation"))
     return { state: "waiting", color: theme.warning }
   if (runs.some((run) => run.status === "running")) return { state: "running", color: theme.info }

@@ -8,6 +8,8 @@ export interface ScriptedOptions {
   readonly reply?: string
   readonly reasoning?: string
   readonly delayMs?: number
+  /** Set to null to silence the call, or to a pair to force one, so a test names what it wants. */
+  readonly toolCall?: { readonly toolName: string; readonly input: unknown } | null
 }
 
 export interface ScriptedSettings {
@@ -89,7 +91,7 @@ export function resolveScriptedToolCall(environment: Record<string, string | und
  */
 export function scriptedModel(options: ScriptedOptions = {}): Model {
   const settings = resolveScriptedOptions(process.env, options)
-  const toolCall = resolveScriptedToolCall(process.env)
+  const toolCall = options.toolCall === undefined ? resolveScriptedToolCall(process.env) : options.toolCall
   return {
     name: "scripted",
     async *stream(request: ModelRequest): AsyncGenerator<ModelEvent, TokenUsage | undefined> {

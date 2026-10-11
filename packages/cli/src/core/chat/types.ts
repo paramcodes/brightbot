@@ -25,9 +25,11 @@ export type ToolRunStatus =
   /** Waiting on the user's confirmation. */
   | "awaiting-confirmation"
   | "running"
-  /** Finished. `ok` on the result says whether it worked. */
+  /** Ran and succeeded. */
   | "complete"
-  /** Refused by the user before it ran. */
+  /** Ran and failed, and the output carries the reason. */
+  | "failed"
+  /** Refused by the user before it ran, so there is no output from the machine. */
   | "denied"
 
 /** One call and everything that came of it. This is what a turn renders and what the loop carries. */

@@ -86,7 +86,7 @@ export function transcript(messages: readonly ChatMessage[]): ChatRequest["messa
         toolName: run.call.toolName,
         input: run.call.input,
         output: run.output,
-        ok: run.status !== "denied",
+        ok: run.status === "complete",
       }))
     if (message.status === "streaming" && rows.length === 0) return []
     return [{ role: message.role, content: message.content }, ...rows]
@@ -218,7 +218,7 @@ export function useChatSession(transport: ChatTransport, options: ChatSessionOpt
     const result = await executeTool(run.call, options.root?.() ?? cwd())
     const finished: ToolRun = {
       call: run.call,
-      status: result.ok ? "complete" : "denied",
+      status: result.ok ? "complete" : "failed",
       output: result.output,
       durationMs: Date.now() - startedAt,
     }
